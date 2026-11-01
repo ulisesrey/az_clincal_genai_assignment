@@ -1,3 +1,4 @@
+import { ChatPanel } from "./ChatPanel";
 import { SummaryPanel } from "./SummaryPanel";
 
 export function App() {
@@ -5,6 +6,7 @@ export function App() {
     <main>
       <h1>Finance Spend Intelligence</h1>
       <SummaryPanel />
+      <ChatPanel />
     </main>
   );
 }

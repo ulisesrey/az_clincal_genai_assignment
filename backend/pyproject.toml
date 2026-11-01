@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Finance spend intelligence assistant backend"
 requires-python = ">=3.12"
 dependencies = [
+    "boto3[crt]>=1.43.123",
     "fastapi>=0.162.0",
     "pandas>=3.1.0",
     "uvicorn[standard]>=0.54.0",
@@ -18,5 +19,10 @@ packages = ["spend_assistant"]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.16.0",
     "pyright>=1.1.414",
+    "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
