@@ -2,5 +2,12 @@ assignment_brief.md
 assignment_brief.pdf
 data/*
 .agents/*
+node_modules/
+.venv/
+__pycache__/
+frontend/test-results/
+frontend/playwright-report/
+frontend/dist/
+*.tsbuildinfo
 AGENTS.md
 docs/agents/*.md
