@@ -15,7 +15,7 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
 
-def create_app(ledger: pd.DataFrame, policy_text: str, provider: ChatProvider) -> FastAPI:
+def create_app(ledger: pd.DataFrame, provider: ChatProvider) -> FastAPI:
     app = FastAPI(title="Finance Spend Intelligence")
     app.add_middleware(
         CORSMiddleware,
@@ -24,7 +24,7 @@ def create_app(ledger: pd.DataFrame, policy_text: str, provider: ChatProvider) -
         allow_headers=["Content-Type"],
     )
     summary = summarize(ledger)
-    agent = Agent(ledger, policy_text, provider)
+    agent = Agent(ledger, provider)
 
     @app.exception_handler(ProviderError)
     async def provider_failed(_: Request, error: ProviderError) -> JSONResponse:

@@ -19,17 +19,17 @@ class ChatProvider(Protocol):
     def converse(
         self, system: str, messages: list[dict[str, Any]], tool_specs: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """One model turn. The model must call at least one tool. Returns the assistant message."""
+        """One model turn. Returns the assistant message: text, toolUse blocks, or both."""
         ...
 
 
 class BedrockProvider:
     """Model ID from BEDROCK_MODEL_ID, region from AWS_REGION; credentials from the standard AWS chain."""
 
-    def __init__(self) -> None:
+    def __init__(self, client: Any = None) -> None:
         self.model_id = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
         self.region = os.environ.get("AWS_REGION", DEFAULT_REGION)
-        self._client: Any = None
+        self._client = client
 
     def _bedrock(self) -> Any:
         if self._client is None:
@@ -48,7 +48,7 @@ class BedrockProvider:
                 modelId=self.model_id,
                 system=[{"text": system}],
                 messages=messages,
-                toolConfig={"tools": [{"toolSpec": spec} for spec in tool_specs], "toolChoice": {"any": {}}},
+                toolConfig={"tools": [{"toolSpec": spec} for spec in tool_specs], "toolChoice": {"auto": {}}},
                 inferenceConfig={"maxTokens": 4096, "temperature": 0},
             )
         except (ClientError, BotoCoreError) as error:
