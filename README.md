@@ -24,6 +24,14 @@ uv sync
 uv run python -m spend_assistant      # serves http://localhost:8000 (override with PORT)
 ```
 
+The chat panel's answers come from AWS Bedrock (Converse API with native tool calling). The backend reads:
+
+- `BEDROCK_MODEL_ID`: the Bedrock model or inference profile (default `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`).
+- `AWS_REGION`: the Bedrock region (default `eu-west-1`).
+- Credentials from the standard AWS credential chain (environment variables, `AWS_PROFILE`, SSO or `aws login`). The account needs `bedrock:InvokeModel` access to the model.
+
+`POST /ask` returns a 502 with `{ error, detail }` if Bedrock can't be reached.
+
 ### 3. Frontend (Node 20+)
 
 ```sh
@@ -43,6 +51,8 @@ cd frontend
 npx playwright install chromium       # first time only
 npm run e2e
 ```
+
+The chat tests (`ask-*.spec.ts`) call live AWS Bedrock, so they need the credentials and variables above and use real tokens. They check figures and IDs shown in the Evidence, never the model's wording. Variables exported in the shell (`DATA_DIR`, `AWS_*`, `BEDROCK_MODEL_ID`) reach the backend Playwright starts. If ports 8000 or 5173 are taken, run on others with `E2E_BACKEND_PORT=8123 E2E_FRONTEND_PORT=5199 npm run e2e`.
 
 The expected figures in the tests were computed independently from the raw CSVs and the raw ECB `eurofxref-hist` file. Each invoice's EUR-Equivalent is rounded half-up to the cent, then the results are summed.
 
