@@ -2,3 +2,5 @@ assignment_brief.md
 assignment_brief.pdf
 data/*
 .agents/*
+AGENTS.md
+docs/agents/*.md
