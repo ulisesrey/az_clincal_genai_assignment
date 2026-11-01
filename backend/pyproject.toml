@@ -19,7 +19,7 @@ packages = ["spend_assistant"]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "httpx2>=2.16.0",
     "pyright>=1.1.414",
     "pytest>=9.2.0",
 ]
