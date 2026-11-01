@@ -9,6 +9,11 @@ MAVERICK_SPEND_THRESHOLD_EUR = Decimal(1000)
 NON_ACTIVE_VENDOR_STATUSES = ("INACTIVE", "ON_HOLD")
 
 
+def net_spend_eur(invoices: pd.DataFrame) -> Decimal:
+    """Spend over ledger rows: the sum of their EUR-Equivalents, so Credit Notes reduce it."""
+    return sum(invoices["eur_equivalent"], Decimal(0))
+
+
 def build_ledger(pack: DataPack, rates: EcbRates) -> pd.DataFrame:
     """Invoices enriched with EUR-Equivalent, Rate Date, current vendor attributes, and Control Exception and Credit Note markers."""
     invoices = pack.invoices.copy()

@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from typing import Literal
+
+OriginalCurrency = Literal["EUR", "GBP", "USD"]
 
 REPORTING_CURRENCY = "EUR"
 CENT = Decimal("0.01")

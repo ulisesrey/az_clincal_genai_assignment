@@ -5,15 +5,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from spend_assistant.fx import REPORTING_CURRENCY
+from spend_assistant.fx import REPORTING_CURRENCY, OriginalCurrency
+from spend_assistant.ledger import net_spend_eur
+from spend_assistant.summary import CurrencyBreakdown, currency_breakdown
 
 VendorStatus = Literal["ACTIVE", "INACTIVE", "ON_HOLD"]
-OriginalCurrency = Literal["EUR", "GBP", "USD"]
 GroupBy = Literal["vendor", "country", "category", "vendor_status", "currency", "cost_center", "month"]
 
 
@@ -74,52 +75,64 @@ class AggregateSpendArgs(BaseModel):
     top_n: int | None = Field(default=None, ge=1, description="Keep only the N groups with the highest net Spend.")
 
 
-class CurrencySubtotal(BaseModel):
-    currency: str
-    native_total: Decimal
-    spend_eur: Decimal
-    invoice_count: int
+class ToolResult(BaseModel):
+    """Every tool result names the invoices it was computed from, so Evidence can cite them as Source Rows."""
+
+    invoice_numbers: list[str] = Field(description="Every invoice the result was computed from.")
 
 
 class SpendGroup(BaseModel):
     key: str
-    name: str | None = None
+    name: str | None = Field(default=None, description="Vendor name, for vendor groups.")
     spend_eur: Decimal
     invoice_count: int
-    by_currency: list[CurrencySubtotal]
+    by_currency: list[CurrencyBreakdown]
     invoice_numbers: list[str]
 
 
-class AggregateSpendResult(BaseModel):
+class AggregateSpendResult(ToolResult):
     reporting_currency: str = REPORTING_CURRENCY
-    spend_eur: Decimal
+    spend_eur: Decimal = Field(description="Net Spend over every invoice matching the filter, whatever top_n is.")
     invoice_count: int
-    by_currency: list[CurrencySubtotal]
-    groups: list[SpendGroup] | None = None
-    groups_omitted: int = 0
-    invoice_numbers: list[str]
+    by_currency: list[CurrencyBreakdown]
+    groups: list[SpendGroup] | None = Field(default=None, description="Groups ranked by net Spend, limited by top_n.")
+    groups_omitted: int = Field(default=0, description="Lower-ranked groups left out by top_n.")
 
 
-def _currency_subtotals(rows: pd.DataFrame) -> list[CurrencySubtotal]:
-    return [
-        CurrencySubtotal(
-            currency=str(currency),
-            native_total=sum(group["amount"], Decimal(0)),
-            spend_eur=sum(group["eur_equivalent"], Decimal(0)),
-            invoice_count=len(group),
-        )
-        for currency, group in rows.groupby("currency", sort=True)
-    ]
+@dataclass(frozen=True)
+class _Grouping:
+    keys: Callable[[pd.DataFrame], pd.Series]
+    name_column: str | None = None
 
 
-_GROUP_COLUMNS: dict[str, str] = {
-    "vendor": "vendor_id",
-    "country": "country",
-    "category": "category",
-    "vendor_status": "vendor_status",
-    "currency": "currency",
-    "cost_center": "cost_center",
+def _column(name: str) -> Callable[[pd.DataFrame], pd.Series]:
+    return lambda rows: cast(pd.Series, rows[name])
+
+
+_GROUPINGS: dict[GroupBy, _Grouping] = {
+    "vendor": _Grouping(_column("vendor_id"), name_column="vendor_name"),
+    "country": _Grouping(_column("country")),
+    "category": _Grouping(_column("category")),
+    "vendor_status": _Grouping(_column("vendor_status")),
+    "currency": _Grouping(_column("currency")),
+    "cost_center": _Grouping(_column("cost_center")),
+    "month": _Grouping(lambda rows: rows["invoice_date"].dt.strftime("%Y-%m")),
 }
+
+
+def _spend_groups(rows: pd.DataFrame, grouping: _Grouping) -> list[SpendGroup]:
+    groups = [
+        SpendGroup(
+            key=str(key),
+            name=str(group[grouping.name_column].iloc[0]) if grouping.name_column else None,
+            spend_eur=net_spend_eur(group),
+            invoice_count=len(group),
+            by_currency=currency_breakdown(group),
+            invoice_numbers=list(group["invoice_number"]),
+        )
+        for key, group in rows.groupby(grouping.keys(rows), sort=True)
+    ]
+    return sorted(groups, key=lambda group: group.spend_eur, reverse=True)
 
 
 def aggregate_spend(ledger: pd.DataFrame, args: AggregateSpendArgs) -> AggregateSpendResult:
@@ -127,33 +140,15 @@ def aggregate_spend(ledger: pd.DataFrame, args: AggregateSpendArgs) -> Aggregate
     groups: list[SpendGroup] | None = None
     omitted = 0
     if args.group_by is not None:
-        keys = (
-            rows["invoice_date"].dt.strftime("%Y-%m")
-            if args.group_by == "month"
-            else rows[_GROUP_COLUMNS[args.group_by]]
-        )
-        groups = [
-            SpendGroup(
-                key=str(key),
-                name=str(group["vendor_name"].iloc[0]) if args.group_by == "vendor" else None,
-                spend_eur=sum(group["eur_equivalent"], Decimal(0)),
-                invoice_count=len(group),
-                by_currency=_currency_subtotals(group),
-                invoice_numbers=list(group["invoice_number"]),
-            )
-            for key, group in rows.groupby(keys, sort=True)
-        ]
-        groups.sort(key=lambda g: g.spend_eur, reverse=True)
-        if args.top_n is not None and len(groups) > args.top_n:
-            omitted = len(groups) - args.top_n
+        groups = _spend_groups(rows, _GROUPINGS[args.group_by])
+        if args.top_n is not None:
+            omitted = max(len(groups) - args.top_n, 0)
             groups = groups[: args.top_n]
-            kept = {number for g in groups for number in g.invoice_numbers}
-            rows = rows.loc[rows["invoice_number"].isin(list(kept))]
 
     return AggregateSpendResult(
-        spend_eur=sum(rows["eur_equivalent"], Decimal(0)),
+        spend_eur=net_spend_eur(rows),
         invoice_count=len(rows),
-        by_currency=_currency_subtotals(rows),
+        by_currency=currency_breakdown(rows),
         groups=groups,
         groups_omitted=omitted,
         invoice_numbers=list(rows["invoice_number"]),
@@ -165,15 +160,15 @@ class Tool:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[[pd.DataFrame, Any], BaseModel]
+    run: Callable[[pd.DataFrame, Any], ToolResult]
 
 
 AGGREGATE_SPEND = Tool(
     name="aggregate_spend",
     description=(
         "Net Spend in EUR-Equivalent over the invoices matching the filter (Credit Notes count as negatives), "
-        "optionally grouped and ranked by net Spend, with per-Original-Currency subtotals and invoice counts. "
-        "When top_n is set, totals and invoice_numbers cover only the returned groups."
+        "with per-Original-Currency subtotals and invoice counts, optionally grouped and ranked by net Spend. "
+        "The totals and invoice_numbers always cover every matching invoice; top_n only limits the groups listed."
     ),
     args_model=AggregateSpendArgs,
     run=aggregate_spend,
