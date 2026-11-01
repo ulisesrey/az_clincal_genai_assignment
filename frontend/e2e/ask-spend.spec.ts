@@ -12,6 +12,16 @@ const TOP_5_VENDORS = [
   { vendorId: "V-1007", spend: "EUR 675,042.79" },
 ];
 
+// Vendor Master country == "Spain": V-1002, V-1006, V-1009. No Credit Notes among them.
+const SPAIN_TOTAL = "EUR 2,631,938.81";
+const SPAIN_INVOICES = `
+  INV-20001 INV-20003 INV-20004 INV-20006 INV-20007 INV-20010 INV-20011 INV-20020 INV-20023 INV-20027
+  INV-20035 INV-20040 INV-20041 INV-20044 INV-20046 INV-20049 INV-20053 INV-20056 INV-20058 INV-20062
+  INV-20065 INV-20066 INV-20067 INV-20071 INV-20073 INV-20075 INV-20076 INV-20078 INV-20079 INV-20080
+  INV-20081 INV-20084 INV-20085 INV-20086 INV-20090 INV-20094 INV-20103 INV-20105 INV-20108 INV-20112
+  INV-20114 INV-20115 INV-20116 INV-20122 INV-20125 INV-20126 INV-20133 INV-20136 INV-20140
+`.trim().split(/\s+/);
+
 const ANSWER_TIMEOUT = 120_000;
 
 test.describe.configure({ timeout: 180_000 });
@@ -60,4 +70,22 @@ test("top 5 vendors by Spend in 2025 shows the right vendor IDs in order with th
   const groups = await computationGroups(computation);
   const expected = TOP_5_VENDORS.map(({ vendorId, spend }) => ({ key: vendorId, spend }));
   expect(groups.some((g) => JSON.stringify(g.slice(0, 5)) === JSON.stringify(expected))).toBe(true);
+});
+
+test("total Spend with vendors based in Spain shows the net EUR total, with only Spanish vendors' invoices as Source Rows", async ({ page }) => {
+  await page.goto("/");
+  const message = await ask(page, "Total Spend with vendors based in Spain");
+
+  await expect(message.getByTestId("answer-status")).toHaveText("answered");
+
+  const computation = await openEvidence(message, "Computation");
+  await expect(computation.getByTestId("computation-spend").filter({ hasText: SPAIN_TOTAL }).first()).toBeVisible();
+
+  const sourceRows = await openEvidence(message, "Source Rows");
+  const invoiceNumbers = await sourceRows
+    .getByRole("table", { name: "Source Rows: invoices" })
+    .locator("tbody tr")
+    .getByRole("rowheader")
+    .allTextContents();
+  expect(invoiceNumbers.map((n) => n.trim()).sort()).toEqual([...SPAIN_INVOICES].sort());
 });
