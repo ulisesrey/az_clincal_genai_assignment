@@ -17,11 +17,19 @@ class VendorStatusBreakdown(BaseModel):
     invoice_count: int
 
 
+class ControlExceptionCounts(BaseModel):
+    maverick_spend: int
+    missing_approval: int
+    non_active_vendor: int
+
+
 class Summary(BaseModel):
     invoice_count: int
     total_spend_eur: Decimal
     by_currency: list[CurrencyBreakdown]
     by_vendor_status: list[VendorStatusBreakdown]
+    control_exceptions: ControlExceptionCounts
+    credit_note_count: int
 
 
 def summarize(ledger: pd.DataFrame) -> Summary:
@@ -47,4 +55,10 @@ def summarize(ledger: pd.DataFrame) -> Summary:
         total_spend_eur=sum(ledger["eur_equivalent"], Decimal(0)),
         by_currency=by_currency,
         by_vendor_status=by_vendor_status,
+        control_exceptions=ControlExceptionCounts(
+            maverick_spend=len(ledger[ledger["is_maverick_spend"]]),
+            missing_approval=len(ledger[ledger["is_missing_approval"]]),
+            non_active_vendor=len(ledger[ledger["is_non_active_vendor"]]),
+        ),
+        credit_note_count=len(ledger[ledger["is_credit_note"]]),
     )
