@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 
@@ -7,6 +8,11 @@ from spend_assistant.fx import EcbRates
 
 MAVERICK_SPEND_THRESHOLD_EUR = Decimal(1000)
 NON_ACTIVE_VENDOR_STATUSES = ("INACTIVE", "ON_HOLD")
+
+
+def net_spend_eur(invoices: pd.DataFrame) -> Decimal:
+    """Spend over ledger rows: the sum of their EUR-Equivalents, so Credit Notes reduce it."""
+    return sum(invoices["eur_equivalent"], Decimal(0))
 
 
 def build_ledger(pack: DataPack, rates: EcbRates) -> pd.DataFrame:
@@ -37,3 +43,29 @@ def build_ledger(pack: DataPack, rates: EcbRates) -> pd.DataFrame:
     ledger = invoices.merge(vendors, on="vendor_id", how="left", validate="many_to_one")
     ledger["is_non_active_vendor"] = ledger["vendor_status"].isin(NON_ACTIVE_VENDOR_STATUSES)
     return ledger
+
+
+def invoices_by_number(ledger: pd.DataFrame, invoice_numbers: set[str]) -> list[dict[str, Any]]:
+    """The ledger rows for these invoice numbers, in ledger order."""
+    return ledger.loc[ledger["invoice_number"].isin(list(invoice_numbers))].to_dict("records")
+
+
+def invoice_fields(invoice: dict[str, Any]) -> dict[str, str | None]:
+    """An invoice's identifying, vendor and currency fields as strings, for display as a Source Row."""
+    return {
+        "invoice_date": invoice["invoice_date"].date().isoformat(),
+        "vendor_id": invoice["vendor_id"],
+        "vendor_name": invoice["vendor_name"],
+        "country": invoice["country"],
+        "vendor_status": invoice["vendor_status"],
+        "cost_center": invoice["cost_center"],
+        "amount": str(invoice["amount"]),
+        "currency": invoice["currency"],
+        "eur_equivalent": str(invoice["eur_equivalent"]),
+        "ecb_rate": _optional_str(invoice["ecb_rate"]),
+        "rate_date": _optional_str(invoice["rate_date"]),
+    }
+
+
+def _optional_str(value: Any) -> str | None:
+    return None if value is None or pd.isna(value) else str(value)

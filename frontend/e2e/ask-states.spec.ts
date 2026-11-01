@@ -1,8 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { ANSWER_TIMEOUT, chatPanel, submitQuestion } from "./ask";
 
 // No responses are faked: requests are only delayed or dropped, then served by the real backend and live Bedrock.
-
-const ANSWER_TIMEOUT = 120_000;
 
 test.describe.configure({ timeout: 300_000 });
 
@@ -21,14 +20,9 @@ test("each question has its own loading, error and retry state, and earlier answ
   });
 
   await page.goto("/");
-  const chat = page.getByRole("region", { name: "Ask a question" });
-  const askQuestion = async (question: string) => {
-    await chat.getByRole("textbox", { name: "Question" }).fill(question);
-    await chat.getByRole("button", { name: "Ask" }).click();
-    return chat.getByRole("article", { name: question });
-  };
+  const chat = chatPanel(page);
 
-  const first = await askQuestion("Total Spend with vendors based in Spain");
+  const first = await submitQuestion(page, "Total Spend with vendors based in Spain");
   await expect(first.getByRole("alert")).toBeVisible();
   await expect(first.getByTestId("answer-status")).toHaveCount(0);
 
@@ -37,7 +31,7 @@ test("each question has its own loading, error and retry state, and earlier answ
   await expect(first.getByRole("alert")).toHaveCount(0);
 
   hold = new Promise<void>((resolve) => (release = resolve));
-  const second = await askQuestion("Total Spend with vendors based in Germany");
+  const second = await submitQuestion(page, "Total Spend with vendors based in Germany");
   await expect(second.getByRole("status")).toBeVisible();
   await expect(first.getByTestId("answer-status")).toHaveText("answered");
   await expect(first.getByRole("status")).toHaveCount(0);

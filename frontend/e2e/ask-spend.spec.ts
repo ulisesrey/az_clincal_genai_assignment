@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
+import { ask, openEvidence } from "./ask";
 
 // Live AWS Bedrock: these tests check facts and IDs shown in the Evidence, never the model's wording.
 // Expected figures computed from the raw CSVs and the raw ECB eurofxref-hist file (per-invoice
@@ -14,6 +15,7 @@ const TOP_5_VENDORS = [
 
 // Vendor Master country == "Spain": V-1002, V-1006, V-1009. No Credit Notes among them.
 const SPAIN_TOTAL = "EUR 2,631,938.81";
+const SPAIN_TOTAL_CENTS = 263_193_881;
 const SPAIN_INVOICES = `
   INV-20001 INV-20003 INV-20004 INV-20006 INV-20007 INV-20010 INV-20011 INV-20020 INV-20023 INV-20027
   INV-20035 INV-20040 INV-20041 INV-20044 INV-20046 INV-20049 INV-20053 INV-20056 INV-20058 INV-20062
@@ -22,42 +24,28 @@ const SPAIN_INVOICES = `
   INV-20114 INV-20115 INV-20116 INV-20122 INV-20125 INV-20126 INV-20133 INV-20136 INV-20140
 `.trim().split(/\s+/);
 
-const ANSWER_TIMEOUT = 120_000;
-
 test.describe.configure({ timeout: 180_000 });
 
-async function ask(page: Page, question: string): Promise<Locator> {
-  const chat = page.getByRole("region", { name: "Ask a question" });
-  await chat.getByRole("textbox", { name: "Question" }).fill(question);
-  await chat.getByRole("button", { name: "Ask" }).click();
-  const message = chat.getByRole("article").filter({ hasText: question });
-  await expect(message.getByTestId("answer-status")).toBeVisible({ timeout: ANSWER_TIMEOUT });
-  return message;
-}
-
-async function openEvidence(message: Locator, section: "Computation" | "Source Rows"): Promise<Locator> {
-  const details = message.locator("details").filter({ has: message.page().getByText(section, { exact: true }) });
-  await expect(details).not.toHaveAttribute("open");
-  await details.getByText(section, { exact: true }).click();
-  await expect(details).toHaveAttribute("open", "");
-  return details;
-}
-
-async function computationGroups(message: Locator): Promise<{ key: string; spend: string }[][]> {
-  const tables = message.getByRole("table", { name: /^Computation \d+ groups$/ });
-  const result: { key: string; spend: string }[][] = [];
+async function vendorRankings(computation: Locator): Promise<{ key: string; spend: string }[][]> {
+  const tables = computation.getByRole("table", { name: /^Computation \d+ grouped by vendor$/ });
+  const rankings: { key: string; spend: string }[][] = [];
   for (const table of await tables.all()) {
-    const rows = await table.locator("tbody tr").all();
     const groups = [];
-    for (const row of rows) {
+    for (const row of await table.locator("tbody tr").all()) {
       groups.push({
         key: (await row.getByRole("rowheader").textContent())!.trim(),
         spend: (await row.getByTestId("group-spend").textContent())!.trim(),
       });
     }
-    result.push(groups);
+    rankings.push(groups);
   }
-  return result;
+  return rankings;
+}
+
+function toCents(amount: string): number {
+  const [units, fraction = ""] = amount.replace("-", "").split(".");
+  const cents = Number(units) * 100 + Number(fraction.padEnd(2, "0"));
+  return amount.startsWith("-") ? -cents : cents;
 }
 
 test("top 5 vendors by Spend in 2025 shows the right vendor IDs in order with their EUR figures", async ({ page }) => {
@@ -67,9 +55,12 @@ test("top 5 vendors by Spend in 2025 shows the right vendor IDs in order with th
   await expect(message.getByTestId("answer-status")).toHaveText("answered");
 
   const computation = await openEvidence(message, "Computation");
-  const groups = await computationGroups(computation);
+  const rankings = await vendorRankings(computation);
   const expected = TOP_5_VENDORS.map(({ vendorId, spend }) => ({ key: vendorId, spend }));
-  expect(groups.some((g) => JSON.stringify(g.slice(0, 5)) === JSON.stringify(expected))).toBe(true);
+  expect(rankings.length).toBeGreaterThan(0);
+  for (const ranking of rankings) {
+    expect(ranking.slice(0, 5)).toEqual(expected);
+  }
 });
 
 test("total Spend with vendors based in Spain shows the net EUR total, with only Spanish vendors' invoices as Source Rows", async ({ page }) => {
@@ -81,11 +72,12 @@ test("total Spend with vendors based in Spain shows the net EUR total, with only
   const computation = await openEvidence(message, "Computation");
   await expect(computation.getByTestId("computation-spend").filter({ hasText: SPAIN_TOTAL }).first()).toBeVisible();
 
-  const sourceRows = await openEvidence(message, "Source Rows");
-  const invoiceNumbers = await sourceRows
-    .getByRole("table", { name: "Source Rows: invoices" })
-    .locator("tbody tr")
-    .getByRole("rowheader")
-    .allTextContents();
+  const sourceRows = (await openEvidence(message, "Source Rows")).getByRole("table", { name: "Source Rows" });
+  const invoiceNumbers = await sourceRows.locator("tbody tr").getByRole("rowheader").allTextContents();
   expect(invoiceNumbers.map((n) => n.trim()).sort()).toEqual([...SPAIN_INVOICES].sort());
+  expect(new Set(await sourceRows.getByTestId("source-row-country").allTextContents())).toEqual(new Set(["Spain"]));
+  const eurAmounts = await sourceRows
+    .getByTestId("source-row-eur")
+    .evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-amount") ?? ""));
+  expect(eurAmounts.reduce((total, amount) => total + toCents(amount), 0)).toBe(SPAIN_TOTAL_CENTS);
 });

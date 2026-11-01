@@ -17,7 +17,7 @@ def main() -> None:
         print(f"Startup failed: {error}", file=sys.stderr)
         sys.exit(1)
 
-    app = create_app(build_ledger(pack, EcbRates()), pack.policy_text, BedrockProvider())
+    app = create_app(build_ledger(pack, EcbRates()), BedrockProvider())
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8000")))
 
 
