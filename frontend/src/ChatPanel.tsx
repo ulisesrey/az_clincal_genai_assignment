@@ -67,12 +67,11 @@ function ChatMessage({ question }: { question: string }) {
 }
 
 function Answer({ response }: { response: AskResponse }) {
-  const { computations, rows } = response.evidence;
+  const { computations, rows: sourceRows } = response.evidence;
   return (
     <div className={`answer answer-${response.status}`}>
       <p>
         <span data-testid="answer-status">{response.status}</span>
-        {response.status === "declined" && " (Declined Answer)"}
       </p>
       <p style={{ whiteSpace: "pre-wrap" }}>{response.answer}</p>
       {response.warnings.length > 0 && (
@@ -91,7 +90,7 @@ function Answer({ response }: { response: AskResponse }) {
       </details>
       <details>
         <summary>Source Rows</summary>
-        {rows.length === 0 ? <p>No Source Rows.</p> : <SourceRowsTable rows={rows} />}
+        {sourceRows.length === 0 ? <p>No Source Rows.</p> : <SourceRowsTable sourceRows={sourceRows} />}
       </details>
     </div>
   );
@@ -99,6 +98,7 @@ function Answer({ response }: { response: AskResponse }) {
 
 function ComputationView({ number, computation }: { number: number; computation: Computation }) {
   const { result } = computation;
+  const groupBy = typeof computation.args.group_by === "string" ? computation.args.group_by : "group";
   return (
     <figure>
       <figcaption>
@@ -118,7 +118,7 @@ function ComputationView({ number, computation }: { number: number; computation:
           <thead>
             <tr>
               <th scope="col">Currency</th>
-              <th scope="col">Net Spend (native)</th>
+              <th scope="col">Net Spend (Original Currency)</th>
               <th scope="col">Net Spend (EUR-Equivalent)</th>
               <th scope="col">Invoices</th>
             </tr>
@@ -136,7 +136,7 @@ function ComputationView({ number, computation }: { number: number; computation:
         </table>
       )}
       {result.groups && (
-        <table aria-label={`Computation ${number} groups`}>
+        <table aria-label={`Computation ${number} grouped by ${groupBy}`}>
           <thead>
             <tr>
               <th scope="col">Group</th>
@@ -162,69 +162,39 @@ function ComputationView({ number, computation }: { number: number; computation:
   );
 }
 
-function SourceRowsTable({ rows }: { rows: SourceRow[] }) {
-  const invoices = rows.filter((row) => row.invoice_number);
-  const vendors = rows.filter((row) => row.vendor_id && !row.invoice_number);
+function SourceRowsTable({ sourceRows }: { sourceRows: SourceRow[] }) {
   return (
-    <>
-      {invoices.length > 0 && (
-        <table aria-label="Source Rows: invoices">
-          <thead>
-            <tr>
-              <th scope="col">Invoice</th>
-              <th scope="col">Invoice date</th>
-              <th scope="col">Vendor</th>
-              <th scope="col">Country</th>
-              <th scope="col">Vendor Status (current)</th>
-              <th scope="col">Original amount</th>
-              <th scope="col">EUR-Equivalent</th>
-              <th scope="col">ECB Reference Rate</th>
-              <th scope="col">Rate Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invoices.map(({ invoice_number, fields }) => (
-              <tr key={invoice_number}>
-                <th scope="row">{invoice_number}</th>
-                <td>{fields.invoice_date}</td>
-                <td>
-                  {fields.vendor_id} {fields.vendor_name}
-                </td>
-                <td>{fields.country}</td>
-                <td>{fields.vendor_status}</td>
-                <td>{fields.amount && fields.currency && formatMoney(fields.amount, fields.currency)}</td>
-                <td>{fields.eur_equivalent && formatMoney(fields.eur_equivalent, "EUR")}</td>
-                <td>{fields.ecb_rate ?? "—"}</td>
-                <td>{fields.rate_date ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {vendors.length > 0 && (
-        <table aria-label="Source Rows: vendors">
-          <thead>
-            <tr>
-              <th scope="col">Vendor</th>
-              <th scope="col">Name</th>
-              <th scope="col">Country</th>
-              <th scope="col">Category</th>
-              <th scope="col">Vendor Status (current)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vendors.map(({ vendor_id, fields }) => (
-              <tr key={vendor_id}>
-                <th scope="row">{vendor_id}</th>
-                <td>{fields.vendor_name}</td>
-                <td>{fields.country}</td>
-                <td>{fields.category}</td>
-                <td>{fields.vendor_status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </>
+    <table aria-label="Source Rows">
+      <thead>
+        <tr>
+          <th scope="col">Invoice</th>
+          <th scope="col">Invoice date</th>
+          <th scope="col">Vendor</th>
+          <th scope="col">Country</th>
+          <th scope="col">Vendor Status (current)</th>
+          <th scope="col">Original Currency amount</th>
+          <th scope="col">EUR-Equivalent</th>
+          <th scope="col">ECB Reference Rate</th>
+          <th scope="col">Rate Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sourceRows.map(({ invoice_number, fields }) => (
+          <tr key={invoice_number}>
+            <th scope="row">{invoice_number}</th>
+            <td>{fields.invoice_date}</td>
+            <td data-testid="source-row-vendor">{fields.vendor_id} {fields.vendor_name}</td>
+            <td data-testid="source-row-country">{fields.country}</td>
+            <td>{fields.vendor_status}</td>
+            <td>{fields.amount && fields.currency && formatMoney(fields.amount, fields.currency)}</td>
+            <td data-testid="source-row-eur" data-amount={fields.eur_equivalent ?? undefined}>
+              {fields.eur_equivalent && formatMoney(fields.eur_equivalent, "EUR")}
+            </td>
+            <td>{fields.ecb_rate ?? "—"}</td>
+            <td>{fields.rate_date ?? "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

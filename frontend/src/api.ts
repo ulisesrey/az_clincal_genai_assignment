@@ -2,10 +2,19 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export type Money = string;
 
+export type OriginalCurrency = "EUR" | "GBP" | "USD";
+
+export interface CurrencyBreakdown {
+  currency: OriginalCurrency;
+  native_total: Money;
+  spend_eur: Money;
+  invoice_count: number;
+}
+
 export interface Summary {
   invoice_count: number;
   total_spend_eur: Money;
-  by_currency: { currency: string; native_total: Money; spend_eur: Money; invoice_count: number }[];
+  by_currency: CurrencyBreakdown[];
   by_vendor_status: { vendor_status: string; spend_eur: Money; invoice_count: number }[];
   control_exceptions: { maverick_spend: number; missing_approval: number; non_active_vendor: number };
   credit_note_count: number;
@@ -25,19 +34,12 @@ export function formatMoney(amount: Money, currency: string): string {
   return `${currency} ${moneyFormat.format(Number(amount))}`;
 }
 
-export interface CurrencySubtotal {
-  currency: string;
-  native_total: Money;
-  spend_eur: Money;
-  invoice_count: number;
-}
-
 export interface SpendGroup {
   key: string;
   name: string | null;
   spend_eur: Money;
   invoice_count: number;
-  by_currency: CurrencySubtotal[];
+  by_currency: CurrencyBreakdown[];
   invoice_numbers: string[];
 }
 
@@ -47,7 +49,7 @@ export interface Computation {
   result: {
     spend_eur?: Money;
     invoice_count?: number;
-    by_currency?: CurrencySubtotal[];
+    by_currency?: CurrencyBreakdown[];
     groups?: SpendGroup[] | null;
     groups_omitted?: number;
     [field: string]: unknown;
@@ -55,8 +57,7 @@ export interface Computation {
 }
 
 export interface SourceRow {
-  invoice_number: string | null;
-  vendor_id: string | null;
+  invoice_number: string;
   fields: Record<string, string | null>;
 }
 
