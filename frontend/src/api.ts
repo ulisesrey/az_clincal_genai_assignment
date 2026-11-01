@@ -7,6 +7,8 @@ export interface Summary {
   total_spend_eur: Money;
   by_currency: { currency: string; native_total: Money; spend_eur: Money; invoice_count: number }[];
   by_vendor_status: { vendor_status: string; spend_eur: Money; invoice_count: number }[];
+  control_exceptions: { maverick_spend: number; missing_approval: number; non_active_vendor: number };
+  credit_note_count: number;
 }
 
 export async function fetchSummary(): Promise<Summary> {

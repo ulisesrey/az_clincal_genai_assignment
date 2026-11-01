@@ -21,6 +21,8 @@ export function SummaryPanel() {
           <dl>
             <dt>Invoices</dt>
             <dd data-testid="invoice-count">{summary.data.invoice_count}</dd>
+            <dt>Credit Notes</dt>
+            <dd data-testid="credit-note-count">{summary.data.credit_note_count}</dd>
             <dt>Net Spend (EUR-Equivalent)</dt>
             <dd data-testid="total-spend">{formatMoney(summary.data.total_spend_eur, "EUR")}</dd>
           </dl>
@@ -64,6 +66,16 @@ export function SummaryPanel() {
               ))}
             </tbody>
           </table>
+
+          <h3>Control Exceptions</h3>
+          <dl>
+            <dt>Maverick Spend invoices (potential)</dt>
+            <dd data-testid="maverick-spend-count">{summary.data.control_exceptions.maverick_spend}</dd>
+            <dt>Invoices with Missing Approval</dt>
+            <dd data-testid="missing-approval-count">{summary.data.control_exceptions.missing_approval}</dd>
+            <dt>Invoices from a Non-Active Vendor</dt>
+            <dd data-testid="non-active-vendor-count">{summary.data.control_exceptions.non_active_vendor}</dd>
+          </dl>
         </>
       )}
     </section>
