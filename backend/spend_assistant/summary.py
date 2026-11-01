@@ -56,9 +56,9 @@ def summarize(ledger: pd.DataFrame) -> Summary:
         by_currency=by_currency,
         by_vendor_status=by_vendor_status,
         control_exceptions=ControlExceptionCounts(
-            maverick_spend=len(ledger[ledger["is_maverick_spend"]]),
-            missing_approval=len(ledger[ledger["is_missing_approval"]]),
-            non_active_vendor=len(ledger[ledger["is_non_active_vendor"]]),
+            maverick_spend=int(ledger["is_maverick_spend"].to_numpy().sum()),
+            missing_approval=int(ledger["is_missing_approval"].to_numpy().sum()),
+            non_active_vendor=int(ledger["is_non_active_vendor"].to_numpy().sum()),
         ),
-        credit_note_count=len(ledger[ledger["is_credit_note"]]),
+        credit_note_count=int(ledger["is_credit_note"].to_numpy().sum()),
     )

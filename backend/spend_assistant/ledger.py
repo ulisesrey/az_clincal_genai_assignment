@@ -10,7 +10,7 @@ NON_ACTIVE_VENDOR_STATUSES = ("INACTIVE", "ON_HOLD")
 
 
 def build_ledger(pack: DataPack, rates: EcbRates) -> pd.DataFrame:
-    """Invoices enriched with EUR-Equivalent, Rate Date and current vendor attributes."""
+    """Invoices enriched with EUR-Equivalent, Rate Date, current vendor attributes, and Control Exception and Credit Note markers."""
     invoices = pack.invoices.copy()
     invoices["amount"] = invoices["amount"].map(Decimal)
     conversions = [

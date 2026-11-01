@@ -69,11 +69,11 @@ export function SummaryPanel() {
 
           <h3>Control Exceptions</h3>
           <dl>
-            <dt>Maverick Spend (potential)</dt>
+            <dt>Maverick Spend invoices (potential)</dt>
             <dd data-testid="maverick-spend-count">{summary.data.control_exceptions.maverick_spend}</dd>
-            <dt>Missing Approval</dt>
+            <dt>Invoices with Missing Approval</dt>
             <dd data-testid="missing-approval-count">{summary.data.control_exceptions.missing_approval}</dd>
-            <dt>Non-Active Vendor</dt>
+            <dt>Invoices from a Non-Active Vendor</dt>
             <dd data-testid="non-active-vendor-count">{summary.data.control_exceptions.non_active_vendor}</dd>
           </dl>
         </>
