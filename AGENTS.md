@@ -13,3 +13,8 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context: `GLOSSARY.md` at the repo root plus ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+
+## Git Workflow & Constraints
+
+- **Branching:** Always use standard Git branches (`git checkout -b <branch-name>`) checked out from `develop`.
+- **Commit Messages:** Follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`).
