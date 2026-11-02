@@ -11,3 +11,8 @@ frontend/dist/
 *.tsbuildinfo
 AGENTS.md
 docs/agents/*.md
+
+# Ignore internal graphify artifacts and caches
+.graphify_*
+cache/
+.cloud-cta-shown
