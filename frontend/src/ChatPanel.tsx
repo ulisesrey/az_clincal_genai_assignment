@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Loader2, RefreshCw, SendHorizontal } from "lucide-react";
 import {
   askQuestion,
   formatMoney,
@@ -10,6 +11,11 @@ import {
   type SourceRow,
   type VendorSourceRow,
 } from "./api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface Question {
   id: number;
@@ -31,17 +37,36 @@ export function ChatPanel() {
 
   return (
     <section aria-labelledby="chat-heading">
-      <h2 id="chat-heading">Ask a question</h2>
-      {questions.map((question) => (
-        <ChatMessage key={question.id} question={question.text} />
-      ))}
-      <form onSubmit={submit}>
-        <label htmlFor="question-input">Question</label>
-        <input id="question-input" value={draft} onChange={(event) => setDraft(event.target.value)} />
-        <button type="submit" disabled={!draft.trim()}>
-          Ask
-        </button>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle id="chat-heading">Ask a question</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Answers are computed from the invoice data and cited against the procurement policy.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {questions.length === 0 && (
+            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No questions yet. Try “What was our total spend with our top vendor?”
+            </p>
+          )}
+          {questions.map((question) => (
+            <ChatMessage key={question.id} question={question.text} />
+          ))}
+          <form onSubmit={submit} className="space-y-1.5">
+            <label htmlFor="question-input" className="block text-sm font-medium">
+              Question
+            </label>
+            <div className="flex items-center gap-2">
+              <Input id="question-input" value={draft} onChange={(event) => setDraft(event.target.value)} />
+              <Button type="submit" disabled={!draft.trim()}>
+                Ask
+                <SendHorizontal aria-hidden />
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -57,19 +82,28 @@ function ChatMessage({ question }: { question: string }) {
   }, [ask, question]);
 
   return (
-    <article aria-label={question}>
-      <p>
-        <strong>Q:</strong> {question}
+    <article aria-label={question} className="space-y-3">
+      <p className="rounded-lg bg-muted px-4 py-2.5 text-sm">
+        <strong className="font-semibold">Q:</strong> {question}
       </p>
-      {ask.isPending && <p role="status">Answering…</p>}
+      {ask.isPending && (
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          Answering…
+        </p>
+      )}
       {ask.isError && (
-        <div role="alert" data-look="error" style={LOOKS.error}>
-          <p>
-            <strong>Error</strong>: could not answer. {ask.error.message}
+        <div role="alert" data-look="error" className={LOOKS.error}>
+          <p className="flex items-start gap-2 text-sm">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              <strong>Error</strong>: could not answer. {ask.error.message}
+            </span>
           </p>
-          <button type="button" onClick={() => ask.mutate(question)}>
+          <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => ask.mutate(question)}>
+            <RefreshCw aria-hidden />
             Retry
-          </button>
+          </Button>
         </div>
       )}
       {ask.isSuccess && <Answer response={ask.data} />}
@@ -80,82 +114,105 @@ function ChatMessage({ question }: { question: string }) {
 type Look = "answered" | "warned" | "declined" | "error";
 
 // Each outcome looks different, so a Declined Answer is never mistaken for an answer or for an error.
-const LOOKS: Record<Look, CSSProperties> = {
-  answered: { padding: "0.5rem" },
-  warned: { border: "2px solid #b45309", background: "#fffbeb", padding: "0.5rem" },
-  declined: { border: "2px dashed #475569", background: "#f1f5f9", padding: "0.5rem" },
-  error: { border: "2px solid #b91c1c", background: "#fef2f2", color: "#7f1d1d", padding: "0.5rem" },
+const LOOKS: Record<Look, string> = {
+  answered: "space-y-3 rounded-lg border bg-card p-4",
+  warned: "space-y-3 rounded-lg border-2 border-solid border-amber-600 bg-amber-50 p-4",
+  declined: "space-y-3 rounded-lg border-2 border-dashed border-slate-500 bg-slate-100 p-4",
+  error: "flex flex-col gap-3 rounded-lg border-2 border-solid border-red-700 bg-red-50 p-4 text-red-900",
 };
+
+function Evidence({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="group rounded-md border bg-card">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 transition-transform group-open:rotate-90" aria-hidden />
+        {title}
+      </summary>
+      <div className="space-y-3 border-t p-3">{children}</div>
+    </details>
+  );
+}
 
 function Answer({ response }: { response: AskResponse }) {
   const { computations, rows: sourceRows, policy_refs: policyRefs } = response.evidence;
   const warned = response.warnings.length > 0;
   const declined = response.status === "declined";
   const look: Look = declined ? "declined" : warned ? "warned" : "answered";
+  const StatusIcon = declined ? Ban : warned ? AlertTriangle : CheckCircle2;
   return (
-    <div data-look={look} style={LOOKS[look]}>
-      <p>
+    <div data-look={look} className={LOOKS[look]}>
+      <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
+        <StatusIcon className="size-4" aria-hidden />
         <span data-testid="answer-status">{response.status}</span>
       </p>
       {declined && (
-        <p>
+        <p className="text-sm">
           <strong>Declined Answer</strong>: this can't be answered from the data and policy. Reason:
         </p>
       )}
-      <p data-testid="answer-text" style={{ whiteSpace: "pre-wrap" }}>{response.answer}</p>
+      <p data-testid="answer-text" className="whitespace-pre-wrap text-sm leading-relaxed">
+        {response.answer}
+      </p>
       {warned && (
-        <ul aria-label="Warnings" data-testid="answer-warnings" style={{ color: "#92400e", fontWeight: "bold" }}>
+        <ul aria-label="Warnings" data-testid="answer-warnings" className="list-inside list-disc text-sm font-semibold text-amber-800">
           {response.warnings.map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
         </ul>
       )}
-      <details>
-        <summary>Policy References</summary>
-        {policyRefs.length === 0 ? <p>No Policy References.</p> : <PolicyReferences references={policyRefs} />}
-      </details>
-      <details>
-        <summary>Computation</summary>
-        {computations.length === 0 && <p>No Computation was run.</p>}
+      <Evidence title="Policy References">
+        {policyRefs.length === 0 ? <EmptyNote>No Policy References.</EmptyNote> : <PolicyReferences references={policyRefs} />}
+      </Evidence>
+      <Evidence title="Computation">
+        {computations.length === 0 && <EmptyNote>No Computation was run.</EmptyNote>}
         {computations.map((computation, index) => (
           <ComputationView key={index} number={index + 1} computation={computation} />
         ))}
-      </details>
-      <details>
-        <summary>Source Rows</summary>
-        {sourceRows.length === 0 ? <p>No Source Rows.</p> : <SourceRows sourceRows={sourceRows} />}
-      </details>
+      </Evidence>
+      <Evidence title="Source Rows">
+        {sourceRows.length === 0 ? <EmptyNote>No Source Rows.</EmptyNote> : <SourceRows sourceRows={sourceRows} />}
+      </Evidence>
     </div>
   );
+}
+
+function EmptyNote({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
 function PolicyReferences({ references }: { references: PolicyReference[] }) {
   return (
     <>
       {references.map(({ section, text }) => (
-        <blockquote key={section} data-testid="policy-ref">
-          <strong data-testid="policy-ref-section">§{section}</strong>
-          <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+        <blockquote key={section} data-testid="policy-ref" className="space-y-1 border-l-4 border-primary/40 pl-3 text-sm">
+          <strong data-testid="policy-ref-section" className="text-primary">
+            §{section}
+          </strong>
+          <div className="whitespace-pre-wrap text-muted-foreground">{text}</div>
         </blockquote>
       ))}
     </>
   );
 }
 
+function RowHeader({ className, ...props }: ComponentProps<"th">) {
+  return <TableHead scope="row" className={cn("font-medium text-foreground", className)} {...props} />;
+}
+
 function ComputationView({ number, computation }: { number: number; computation: Computation }) {
   const { result } = computation;
   const groupBy = typeof computation.args.group_by === "string" ? computation.args.group_by : "group";
   return (
-    <figure>
-      <figcaption>
-        Computation {number}: <code>{computation.tool}</code>
+    <figure className="space-y-2 text-sm">
+      <figcaption className="font-medium">
+        Computation {number}: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{computation.tool}</code>
       </figcaption>
-      <p>
-        Inputs: <code>{JSON.stringify(computation.args)}</code>
+      <p className="text-muted-foreground">
+        Inputs: <code className="break-all font-mono text-xs">{JSON.stringify(computation.args)}</code>
       </p>
       {result.spend_eur !== undefined && (
         <p>
-          Net Spend (EUR-Equivalent): <span data-testid="computation-spend">{formatMoney(result.spend_eur, "EUR")}</span>{" "}
+          Net Spend (EUR-Equivalent): <span data-testid="computation-spend" className="font-semibold">{formatMoney(result.spend_eur, "EUR")}</span>{" "}
           across {result.invoice_count} invoices
         </p>
       )}
@@ -176,50 +233,50 @@ function ComputationView({ number, computation }: { number: number; computation:
         </p>
       )}
       {result.by_currency && result.by_currency.length > 0 && (
-        <table aria-label={`Computation ${number} by Original Currency`}>
-          <thead>
-            <tr>
-              <th scope="col">Currency</th>
-              <th scope="col">Net Spend (Original Currency)</th>
-              <th scope="col">Net Spend (EUR-Equivalent)</th>
-              <th scope="col">Invoices</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table aria-label={`Computation ${number} by Original Currency`}>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Currency</TableHead>
+              <TableHead scope="col">Net Spend (Original Currency)</TableHead>
+              <TableHead scope="col">Net Spend (EUR-Equivalent)</TableHead>
+              <TableHead scope="col">Invoices</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {result.by_currency.map((row) => (
-              <tr key={row.currency}>
-                <th scope="row">{row.currency}</th>
-                <td>{formatMoney(row.native_total, row.currency)}</td>
-                <td>{formatMoney(row.spend_eur, "EUR")}</td>
-                <td>{row.invoice_count}</td>
-              </tr>
+              <TableRow key={row.currency}>
+                <RowHeader>{row.currency}</RowHeader>
+                <TableCell>{formatMoney(row.native_total, row.currency)}</TableCell>
+                <TableCell>{formatMoney(row.spend_eur, "EUR")}</TableCell>
+                <TableCell>{row.invoice_count}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
       {result.groups && (
-        <table aria-label={`Computation ${number} grouped by ${groupBy}`}>
-          <thead>
-            <tr>
-              <th scope="col">Group</th>
-              <th scope="col">Name</th>
-              <th scope="col">Net Spend (EUR-Equivalent)</th>
-              <th scope="col">Invoices</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table aria-label={`Computation ${number} grouped by ${groupBy}`}>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Group</TableHead>
+              <TableHead scope="col">Name</TableHead>
+              <TableHead scope="col">Net Spend (EUR-Equivalent)</TableHead>
+              <TableHead scope="col">Invoices</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {result.groups.map((group) => (
-              <tr key={group.key}>
-                <th scope="row">{group.key}</th>
-                <td>{group.name ?? ""}</td>
-                <td data-testid="group-spend">{formatMoney(group.spend_eur, "EUR")}</td>
-                <td>{group.invoice_count}</td>
-              </tr>
+              <TableRow key={group.key}>
+                <RowHeader>{group.key}</RowHeader>
+                <TableCell>{group.name ?? ""}</TableCell>
+                <TableCell data-testid="group-spend">{formatMoney(group.spend_eur, "EUR")}</TableCell>
+                <TableCell>{group.invoice_count}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
-      {!!result.groups_omitted && <p>{result.groups_omitted} lower-ranked groups not shown.</p>}
+      {!!result.groups_omitted && <EmptyNote>{result.groups_omitted} lower-ranked groups not shown.</EmptyNote>}
     </figure>
   );
 }
@@ -237,70 +294,68 @@ function SourceRows({ sourceRows }: { sourceRows: SourceRow[] }) {
 
 function InvoiceSourceRowsTable({ rows }: { rows: InvoiceSourceRow[] }) {
   return (
-    <table aria-label="Invoice Source Rows">
-      <thead>
-        <tr>
-          <th scope="col">Invoice</th>
-          <th scope="col">Invoice date</th>
-          <th scope="col">Vendor</th>
-          <th scope="col">Country</th>
-          <th scope="col">Vendor Status (current)</th>
-          <th scope="col">Original Currency amount</th>
-          <th scope="col">EUR-Equivalent</th>
-          <th scope="col">ECB Reference Rate</th>
-          <th scope="col">Rate Date</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label="Invoice Source Rows">
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Invoice</TableHead>
+          <TableHead scope="col">Invoice date</TableHead>
+          <TableHead scope="col">Vendor</TableHead>
+          <TableHead scope="col">Country</TableHead>
+          <TableHead scope="col">Vendor Status (current)</TableHead>
+          <TableHead scope="col">Original Currency amount</TableHead>
+          <TableHead scope="col">EUR-Equivalent</TableHead>
+          <TableHead scope="col">ECB Reference Rate</TableHead>
+          <TableHead scope="col">Rate Date</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rows.map(({ invoice_number, fields }) => (
-          <tr key={invoice_number} data-testid="source-row" data-invoice-number={invoice_number}>
-            <th scope="row" data-testid="source-row-invoice">
-              {invoice_number}
-            </th>
-            <td>{fields.invoice_date}</td>
-            <td data-testid="source-row-vendor" data-vendor-id={fields.vendor_id}>
+          <TableRow key={invoice_number} data-testid="source-row" data-invoice-number={invoice_number}>
+            <RowHeader data-testid="source-row-invoice">{invoice_number}</RowHeader>
+            <TableCell>{fields.invoice_date}</TableCell>
+            <TableCell data-testid="source-row-vendor" data-vendor-id={fields.vendor_id}>
               {fields.vendor_id} {fields.vendor_name}
-            </td>
-            <td data-testid="source-row-country">{fields.country}</td>
-            <td data-testid="source-row-vendor-status">{fields.vendor_status}</td>
-            <td data-testid="source-row-amount" data-amount={fields.amount} data-currency={fields.currency}>
+            </TableCell>
+            <TableCell data-testid="source-row-country">{fields.country}</TableCell>
+            <TableCell data-testid="source-row-vendor-status">{fields.vendor_status}</TableCell>
+            <TableCell data-testid="source-row-amount" data-amount={fields.amount} data-currency={fields.currency}>
               {formatMoney(fields.amount, fields.currency)}
-            </td>
-            <td data-testid="source-row-eur" data-amount={fields.eur_equivalent}>
+            </TableCell>
+            <TableCell data-testid="source-row-eur" data-amount={fields.eur_equivalent}>
               {formatMoney(fields.eur_equivalent, "EUR")}
-            </td>
-            <td data-testid="source-row-rate">{fields.ecb_rate ?? "—"}</td>
-            <td data-testid="source-row-rate-date">{fields.rate_date ?? "—"}</td>
-          </tr>
+            </TableCell>
+            <TableCell data-testid="source-row-rate">{fields.ecb_rate ?? "—"}</TableCell>
+            <TableCell data-testid="source-row-rate-date">{fields.rate_date ?? "—"}</TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
 function VendorSourceRowsTable({ rows }: { rows: VendorSourceRow[] }) {
   return (
-    <table aria-label="Vendor Source Rows">
-      <thead>
-        <tr>
-          <th scope="col">Vendor</th>
-          <th scope="col">Name</th>
-          <th scope="col">Country</th>
-          <th scope="col">Category</th>
-          <th scope="col">Vendor Status (current)</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label="Vendor Source Rows">
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Vendor</TableHead>
+          <TableHead scope="col">Name</TableHead>
+          <TableHead scope="col">Country</TableHead>
+          <TableHead scope="col">Category</TableHead>
+          <TableHead scope="col">Vendor Status (current)</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rows.map(({ vendor_id, fields }) => (
-          <tr key={vendor_id} data-testid="vendor-source-row" data-vendor-id={vendor_id}>
-            <th scope="row">{vendor_id}</th>
-            <td>{fields.vendor_name}</td>
-            <td>{fields.country}</td>
-            <td>{fields.category}</td>
-            <td data-testid="vendor-source-row-status">{fields.vendor_status}</td>
-          </tr>
+          <TableRow key={vendor_id} data-testid="vendor-source-row" data-vendor-id={vendor_id}>
+            <RowHeader>{vendor_id}</RowHeader>
+            <TableCell>{fields.vendor_name}</TableCell>
+            <TableCell>{fields.country}</TableCell>
+            <TableCell>{fields.category}</TableCell>
+            <TableCell data-testid="vendor-source-row-status">{fields.vendor_status}</TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
