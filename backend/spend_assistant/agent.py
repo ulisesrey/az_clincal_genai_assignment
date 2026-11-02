@@ -90,7 +90,7 @@ class Agent:
         result = tool.run(self.context, args)
         computation = Computation(
             tool=tool.name,
-            args=args.model_dump(mode="json", exclude_none=True),
+            args=args.model_dump(mode="json", exclude_unset=True, exclude_none=True),
             result=result.model_dump(mode="json"),
         )
         tool_calls.append(

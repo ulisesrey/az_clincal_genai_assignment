@@ -49,7 +49,7 @@ class InvoiceFilter(BaseModel):
     missing_approval: bool | None = Field(
         default=None, description="true: only invoices with no approver recorded; false: only approved invoices."
     )
-    credit_notes_only: bool | None = Field(default=None, description="true: only Credit Notes (negative amounts).")
+    credit_notes_only: bool = Field(default=False, description="true: only Credit Notes (negative amounts).")
 
     @model_validator(mode="after")
     def _ranges_are_ordered(self) -> "InvoiceFilter":
@@ -85,7 +85,7 @@ class InvoiceFilter(BaseModel):
         if self.eur_max is not None:
             mask &= ledger["eur_equivalent"].map(lambda eur: eur <= self.eur_max)
         if self.control_exception is not None:
-            mask &= ledger[_CONTROL_EXCEPTION_COLUMNS[self.control_exception]]
+            mask &= ledger[CONTROL_EXCEPTIONS[self.control_exception].column]
         if self.missing_po is not None:
             mask &= ledger["po_number"].isna() == self.missing_po
         if self.missing_approval is not None:
@@ -97,29 +97,50 @@ class InvoiceFilter(BaseModel):
     @property
     def policy_sections(self) -> list[str]:
         """The Policy Sections that define the controls this filter selects on."""
-        sections: list[str] = []
+        controls: list[ControlExceptionType] = []
         if self.control_exception is not None:
-            sections += CONTROL_EXCEPTION_SECTIONS[self.control_exception]
+            controls.append(self.control_exception)
         if self.missing_approval:
-            sections += CONTROL_EXCEPTION_SECTIONS["missing_approval"]
-        if self.credit_notes_only:
-            sections += [CREDIT_NOTE_SECTION]
-        return list(dict.fromkeys(sections))
+            controls.append("missing_approval")
+        return _unique(sections_for(controls) + ([CREDIT_NOTE_SECTION] if self.credit_notes_only else []))
+
+    def vendor_filter(self) -> "InvoiceFilter":
+        """The part of this filter that applies to the Vendor Master, i.e. selects vendors rather than invoices."""
+        fields = self.model_dump(include=_VENDOR_FIELDS, exclude_defaults=True)
+        if self.control_exception == "non_active_vendor":
+            fields["control_exception"] = self.control_exception
+        return InvoiceFilter.model_validate(fields)
+
+    @property
+    def selects_invoices(self) -> bool:
+        """Whether any field selects on invoices rather than only on their vendor."""
+        return self != self.vendor_filter()
+
+
+_VENDOR_FIELDS = {"vendor_id", "country", "category", "vendor_status"}
+
+
+@dataclass(frozen=True)
+class _ControlException:
+    column: str
+    sections: list[str]
 
 
 # Maverick Spend is §2.2, and only potential because of the §9.1 emergency exception.
-CONTROL_EXCEPTION_SECTIONS: dict[ControlExceptionType, list[str]] = {
-    "maverick_spend": ["2.2", "9.1"],
-    "missing_approval": ["3.1"],
-    "non_active_vendor": ["4.1"],
+CONTROL_EXCEPTIONS: dict[ControlExceptionType, _ControlException] = {
+    "maverick_spend": _ControlException("is_maverick_spend", ["2.2", "9.1"]),
+    "missing_approval": _ControlException("is_missing_approval", ["3.1"]),
+    "non_active_vendor": _ControlException("is_non_active_vendor", ["4.1"]),
 }
 CREDIT_NOTE_SECTION = "6.1"
 
-_CONTROL_EXCEPTION_COLUMNS: dict[ControlExceptionType, str] = {
-    "maverick_spend": "is_maverick_spend",
-    "missing_approval": "is_missing_approval",
-    "non_active_vendor": "is_non_active_vendor",
-}
+
+def sections_for(controls: list[ControlExceptionType]) -> list[str]:
+    return [section for control in controls for section in CONTROL_EXCEPTIONS[control].sections]
+
+
+def _unique(items: list[str]) -> list[str]:
+    return list(dict.fromkeys(items))
 
 
 class AggregateSpendArgs(BaseModel):
@@ -248,12 +269,8 @@ class ListInvoicesResult(ToolResult):
     invoices_omitted: int = Field(description="Matching invoices left out by the limit.")
 
 
-def _control_exceptions(invoice: dict[str, Any]) -> list[ControlExceptionType]:
-    return [kind for kind, column in _CONTROL_EXCEPTION_COLUMNS.items() if invoice[column]]
-
-
-def _sections_for(exceptions: list[ControlExceptionType]) -> list[str]:
-    return [section for kind in exceptions for section in CONTROL_EXCEPTION_SECTIONS[kind]]
+def _control_exceptions(row: dict[str, Any]) -> list[ControlExceptionType]:
+    return [control for control, spec in CONTROL_EXCEPTIONS.items() if row.get(spec.column)]
 
 
 def _optional(value: Any) -> Any:
@@ -284,10 +301,10 @@ def _invoice_row(invoice: dict[str, Any]) -> InvoiceRow:
 def list_invoices(ledger: pd.DataFrame, args: ListInvoicesArgs) -> ListInvoicesResult:
     rows = args.filter.apply(ledger)
     invoices = [_invoice_row(invoice) for invoice in rows.head(args.limit).to_dict("records")]
-    sections = args.filter.policy_sections + [s for row in invoices for s in _sections_for(row.control_exceptions)]
+    sections = args.filter.policy_sections + [s for row in invoices for s in sections_for(row.control_exceptions)]
     return ListInvoicesResult(
         invoice_numbers=[row.invoice_number for row in invoices],
-        policy_sections=list(dict.fromkeys(sections)),
+        policy_sections=_unique(sections),
         invoice_count=len(rows),
         invoices=invoices,
         invoices_omitted=max(len(rows) - args.limit, 0),
@@ -312,56 +329,27 @@ class VendorRow(BaseModel):
     country: str
     category: str
     vendor_status: VendorStatus = Field(description="Current Vendor Status; the Vendor Master holds no history.")
-    spend_eur: Decimal = Field(description="Net Spend over this vendor's invoices matching the filter.")
-    invoice_count: int
-    invoice_numbers: list[str]
 
 
 class GetVendorsResult(ToolResult):
     vendors: list[VendorRow]
 
 
-_VENDOR_FIELDS = {"vendor_id", "country", "category", "vendor_status"}
-
-
 def get_vendors(vendors: pd.DataFrame, ledger: pd.DataFrame, args: GetVendorsArgs) -> GetVendorsResult:
-    invoice_filter = args.filter
-    vendor_level = invoice_filter.model_dump(include=_VENDOR_FIELDS, exclude_none=True)
-    invoice_level = invoice_filter.model_dump(exclude=_VENDOR_FIELDS, exclude_none=True)
-    if invoice_level.get("control_exception") == "non_active_vendor":
-        vendor_level["control_exception"] = invoice_level.pop("control_exception")
-    if invoice_level.get("credit_notes_only") is False:
-        invoice_level.pop("credit_notes_only")
-
-    master = InvoiceFilter.model_validate(vendor_level).apply(vendors)
-    invoices = invoice_filter.apply(ledger)
-    if invoice_level:
+    """invoice_numbers are the invoices that selected the vendors, so a pure Vendor Master lookup uses none."""
+    master = args.filter.vendor_filter().apply(vendors)
+    invoices = ledger.iloc[0:0]
+    if args.filter.selects_invoices:
+        invoices = args.filter.apply(ledger)
         master = master.loc[master["vendor_id"].isin(invoices["vendor_id"])]
-    invoices = invoices.loc[invoices["vendor_id"].isin(master["vendor_id"])]
 
-    rows = []
-    for vendor in master.to_dict("records"):
-        own = invoices.loc[invoices["vendor_id"] == vendor["vendor_id"]]
-        rows.append(
-            VendorRow(
-                vendor_id=vendor["vendor_id"],
-                vendor_name=vendor["vendor_name"],
-                country=vendor["country"],
-                category=vendor["category"],
-                vendor_status=vendor["vendor_status"],
-                spend_eur=net_spend_eur(own),
-                invoice_count=len(own),
-                invoice_numbers=list(own["invoice_number"]),
-            )
-        )
-    sections = invoice_filter.policy_sections
-    if any(vendor["is_non_active_vendor"] for vendor in master.to_dict("records")):
-        sections += CONTROL_EXCEPTION_SECTIONS["non_active_vendor"]
+    records = master.to_dict("records")
+    sections = args.filter.policy_sections + [s for vendor in records for s in sections_for(_control_exceptions(vendor))]
     return GetVendorsResult(
-        vendors=rows,
-        vendor_ids=[row.vendor_id for row in rows],
+        vendors=[VendorRow.model_validate(vendor) for vendor in records],
+        vendor_ids=list(master["vendor_id"]),
         invoice_numbers=list(invoices["invoice_number"]),
-        policy_sections=list(dict.fromkeys(sections)),
+        policy_sections=_unique(sections),
     )
 
 

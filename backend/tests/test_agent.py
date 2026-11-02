@@ -397,7 +397,7 @@ def test_vendors_found_by_get_vendors_can_be_cited(ledger, vendors):
     [computation] = response.evidence.computations
     assert computation.tool == "get_vendors"
     assert [vendor["vendor_id"] for vendor in computation.result["vendors"]] == ["V-2", "V-3"]
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-3", "INV-4", "INV-5", "INV-6"]
+    assert response.evidence.source_rows == []
     assert [ref.section for ref in response.evidence.policy_references] == ["4.1"]
     assert response.warnings == []
 
