@@ -43,6 +43,17 @@ export interface SpendGroup {
   invoice_numbers: string[];
 }
 
+export interface VendorRow {
+  vendor_id: string;
+  vendor_name: string;
+  country: string;
+  category: string;
+  vendor_status: string;
+  spend_eur: Money;
+  invoice_count: number;
+  invoice_numbers: string[];
+}
+
 export interface Computation {
   tool: string;
   args: Record<string, unknown>;
@@ -58,6 +69,9 @@ export interface Computation {
     eur_equivalent?: Money;
     ecb_rate?: string | null;
     rate_date?: string | null;
+    invoices?: unknown[];
+    invoices_omitted?: number;
+    vendors?: VendorRow[];
     [field: string]: unknown;
   };
 }
