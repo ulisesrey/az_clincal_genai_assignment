@@ -24,6 +24,7 @@ class InvoiceFilter(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    invoice_numbers: list[str] | None = Field(default=None, description="Only these invoices, e.g. [\"INV-20030\"].")
     vendor_id: str | None = Field(default=None, description="Vendor ID, e.g. V-1001.")
     country: str | None = Field(default=None, description="Vendor country from the Vendor Master, e.g. Spain.")
     category: str | None = Field(default=None, description="Vendor category from the Vendor Master.")
@@ -60,6 +61,9 @@ class InvoiceFilter(BaseModel):
 
     def apply(self, ledger: pd.DataFrame) -> pd.DataFrame:
         mask = pd.Series(True, index=ledger.index)
+        if self.invoice_numbers is not None:
+            wanted = {number.strip().casefold() for number in self.invoice_numbers}
+            mask &= ledger["invoice_number"].str.casefold().isin(wanted)
         for column, value in (
             ("vendor_id", self.vendor_id),
             ("country", self.country),

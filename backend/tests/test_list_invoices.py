@@ -70,3 +70,7 @@ def test_the_limit_caps_the_rows_listed_and_counts_the_rest(ledger):
 def test_invalid_arguments_are_rejected(args):
     with pytest.raises(ValidationError):
         ListInvoicesArgs.model_validate(args)
+
+
+def test_a_specific_invoice_is_found_by_its_invoice_number(ledger):
+    assert run(ledger, filter={"invoice_numbers": ["INV-4", " inv-2 "]}).invoice_numbers == ["INV-2", "INV-4"]
