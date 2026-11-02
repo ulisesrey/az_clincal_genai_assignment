@@ -15,6 +15,7 @@ from spend_assistant.ledger import net_spend_eur
 from spend_assistant.summary import CurrencyBreakdown, currency_breakdown
 
 VendorStatus = Literal["ACTIVE", "INACTIVE", "ON_HOLD"]
+ControlExceptionType = Literal["maverick_spend", "missing_approval", "non_active_vendor"]
 GroupBy = Literal["vendor", "country", "category", "vendor_status", "currency", "cost_center", "month"]
 
 
@@ -33,6 +34,21 @@ class InvoiceFilter(BaseModel):
     cost_center: str | None = Field(default=None, description="Cost center, e.g. CC-IT-550.")
     eur_min: Decimal | None = Field(default=None, description="Minimum EUR-Equivalent per invoice, inclusive.")
     eur_max: Decimal | None = Field(default=None, description="Maximum EUR-Equivalent per invoice, inclusive.")
+    control_exception: ControlExceptionType | None = Field(
+        default=None,
+        description=(
+            "Only invoices with this Control Exception: maverick_spend (potential, no PO and EUR-Equivalent of "
+            "EUR 1,000 or more, never a Credit Note), missing_approval (no approver recorded) or non_active_vendor "
+            "(vendor currently INACTIVE or ON_HOLD)."
+        ),
+    )
+    missing_po: bool | None = Field(
+        default=None, description="true: only invoices with no PO reference; false: only invoices with one."
+    )
+    missing_approval: bool | None = Field(
+        default=None, description="true: only invoices with no approver recorded; false: only approved invoices."
+    )
+    credit_notes_only: bool | None = Field(default=None, description="true: only Credit Notes (negative amounts).")
 
     @model_validator(mode="after")
     def _ranges_are_ordered(self) -> "InvoiceFilter":
@@ -64,7 +80,22 @@ class InvoiceFilter(BaseModel):
             mask &= ledger["eur_equivalent"].map(lambda eur: eur >= self.eur_min)
         if self.eur_max is not None:
             mask &= ledger["eur_equivalent"].map(lambda eur: eur <= self.eur_max)
+        if self.control_exception is not None:
+            mask &= ledger[_CONTROL_EXCEPTION_COLUMNS[self.control_exception]]
+        if self.missing_po is not None:
+            mask &= ledger["po_number"].isna() == self.missing_po
+        if self.missing_approval is not None:
+            mask &= ledger["is_missing_approval"] == self.missing_approval
+        if self.credit_notes_only:
+            mask &= ledger["is_credit_note"]
         return ledger.loc[mask]
+
+
+_CONTROL_EXCEPTION_COLUMNS: dict[ControlExceptionType, str] = {
+    "maverick_spend": "is_maverick_spend",
+    "missing_approval": "is_missing_approval",
+    "non_active_vendor": "is_non_active_vendor",
+}
 
 
 class AggregateSpendArgs(BaseModel):

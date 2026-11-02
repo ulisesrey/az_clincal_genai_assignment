@@ -36,6 +36,12 @@ This policy is synthetic.
 
 ## 4. Vendors
 4.1 Only ACTIVE vendors may be paid.
+
+## 6. Credit Notes
+6.1 Negative amounts are credit notes.
+
+## 9. Exceptions
+9.1 Emergencies may skip the PO.
 """
 
 VENDORS = [
@@ -55,6 +61,11 @@ INVOICES = [
 ]
 ALL_INVOICES = [invoice[0] for invoice in INVOICES]
 
+# Control Exceptions: INV-3 has no PO at EUR 1,000.00, so it is Maverick Spend; INV-2 (a Credit Note) and INV-5
+# (EUR 500.00) have no PO but are not. INV-6 has Missing Approval. V-2 and V-3 are Non-Active Vendors.
+WITHOUT_PO = {"INV-2", "INV-3", "INV-5"}
+WITHOUT_APPROVER = {"INV-6"}
+
 
 @pytest.fixture(scope="session")
 def ledger() -> pd.DataFrame:
@@ -70,8 +81,8 @@ def ledger() -> pd.DataFrame:
                 "amount": amount,
                 "currency": currency,
                 "cost_center": cost_center,
-                "po_number": "PO-1",
-                "approved_by": "a.approver",
+                "po_number": None if number in WITHOUT_PO else "PO-1",
+                "approved_by": None if number in WITHOUT_APPROVER else "a.approver",
             }
             for number, day, vendor_id, amount, currency, cost_center in INVOICES
         ]
