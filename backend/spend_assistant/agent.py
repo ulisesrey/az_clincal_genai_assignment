@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
-from spend_assistant.evidence import Computation, Evidence, ToolCall, assemble_evidence
+from spend_assistant.evidence import Citations, Computation, Evidence, ToolCall, assemble_evidence
 from spend_assistant.fx import EcbRates
 from spend_assistant.llm import ChatProvider
 from spend_assistant.policy import Policy
