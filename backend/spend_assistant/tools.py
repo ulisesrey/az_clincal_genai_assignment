@@ -290,6 +290,77 @@ def list_invoices(ledger: pd.DataFrame, args: ListInvoicesArgs) -> ListInvoicesR
     )
 
 
+class GetVendorsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filter: InvoiceFilter = Field(
+        default_factory=lambda: InvoiceFilter(),
+        description=(
+            "Vendor fields (vendor_id, country, category, vendor_status, control_exception=non_active_vendor) select "
+            "from the Vendor Master; any invoice field keeps only vendors with at least one matching invoice."
+        ),
+    )
+
+
+class VendorRow(BaseModel):
+    vendor_id: str
+    vendor_name: str
+    country: str
+    category: str
+    vendor_status: VendorStatus = Field(description="Current Vendor Status; the Vendor Master holds no history.")
+    spend_eur: Decimal = Field(description="Net Spend over this vendor's invoices matching the filter.")
+    invoice_count: int
+    invoice_numbers: list[str]
+
+
+class GetVendorsResult(ToolResult):
+    vendors: list[VendorRow]
+
+
+_VENDOR_FIELDS = {"vendor_id", "country", "category", "vendor_status"}
+
+
+def get_vendors(vendors: pd.DataFrame, ledger: pd.DataFrame, args: GetVendorsArgs) -> GetVendorsResult:
+    invoice_filter = args.filter
+    vendor_level = invoice_filter.model_dump(include=_VENDOR_FIELDS, exclude_none=True)
+    invoice_level = invoice_filter.model_dump(exclude=_VENDOR_FIELDS, exclude_none=True)
+    if invoice_level.get("control_exception") == "non_active_vendor":
+        vendor_level["control_exception"] = invoice_level.pop("control_exception")
+    if invoice_level.get("credit_notes_only") is False:
+        invoice_level.pop("credit_notes_only")
+
+    master = InvoiceFilter.model_validate(vendor_level).apply(vendors)
+    invoices = invoice_filter.apply(ledger)
+    if invoice_level:
+        master = master.loc[master["vendor_id"].isin(invoices["vendor_id"])]
+    invoices = invoices.loc[invoices["vendor_id"].isin(master["vendor_id"])]
+
+    rows = []
+    for vendor in master.to_dict("records"):
+        own = invoices.loc[invoices["vendor_id"] == vendor["vendor_id"]]
+        rows.append(
+            VendorRow(
+                vendor_id=vendor["vendor_id"],
+                vendor_name=vendor["vendor_name"],
+                country=vendor["country"],
+                category=vendor["category"],
+                vendor_status=vendor["vendor_status"],
+                spend_eur=net_spend_eur(own),
+                invoice_count=len(own),
+                invoice_numbers=list(own["invoice_number"]),
+            )
+        )
+    sections = invoice_filter.policy_sections
+    if any(vendor["is_non_active_vendor"] for vendor in master.to_dict("records")):
+        sections += CONTROL_EXCEPTION_SECTIONS["non_active_vendor"]
+    return GetVendorsResult(
+        vendors=rows,
+        vendor_ids=[row.vendor_id for row in rows],
+        invoice_numbers=list(invoices["invoice_number"]),
+        policy_sections=list(dict.fromkeys(sections)),
+    )
+
+
 class ApprovalTierArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

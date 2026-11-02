@@ -11,7 +11,7 @@ import pytest
 
 from spend_assistant.data_pack import DataPack
 from spend_assistant.fx import SNAPSHOT_PATH, EcbRates
-from spend_assistant.ledger import build_ledger
+from spend_assistant.ledger import build_ledger, build_vendor_master
 from spend_assistant.policy import Policy, parse_policy
 
 # Same layout as the supplied policy (numbered headings, numbered clauses, a table under section 3), invented wording.
@@ -68,7 +68,7 @@ WITHOUT_APPROVER = {"INV-6"}
 
 
 @pytest.fixture(scope="session")
-def ledger() -> pd.DataFrame:
+def data_pack() -> DataPack:
     names = {vendor_id: name for vendor_id, name, *_ in VENDORS}
     invoices = pd.DataFrame(
         [
@@ -88,7 +88,17 @@ def ledger() -> pd.DataFrame:
         ]
     ).astype({"po_number": "string", "approved_by": "string"})
     vendors = pd.DataFrame(VENDORS, columns=["vendor_id", "vendor_name", "country", "category", "status"])
-    return build_ledger(DataPack(invoices=invoices, vendors=vendors, policy_text=""), EcbRates())
+    return DataPack(invoices=invoices, vendors=vendors, policy_text="")
+
+
+@pytest.fixture(scope="session")
+def ledger(data_pack: DataPack) -> pd.DataFrame:
+    return build_ledger(data_pack, EcbRates())
+
+
+@pytest.fixture(scope="session")
+def vendors(data_pack: DataPack) -> pd.DataFrame:
+    return build_vendor_master(data_pack)
 
 
 @pytest.fixture(scope="session")
