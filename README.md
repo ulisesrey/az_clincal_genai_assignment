@@ -63,7 +63,7 @@ cd backend
 uv run pytest
 ```
 
-These tests check the analytics tools (`aggregate_spend`) on a small synthetic ledger whose figures can be worked out by hand, and the `/ask` agent loop and Evidence assembly against a stubbed Bedrock Converse client. They need neither the data pack nor AWS access.
+These tests check the analytics tools (`aggregate_spend`, `list_invoices`, `get_vendors`, `required_approval_tier`) on a small synthetic ledger whose figures can be worked out by hand, and the `/ask` agent loop and Evidence assembly against a stubbed Bedrock Converse client. They need neither the data pack nor AWS access.
 
 ### End to end
 
