@@ -67,9 +67,9 @@ def test_the_answer_comes_with_its_computation_and_the_invoices_it_used_as_sourc
     assert computation.tool == "aggregate_spend"
     assert computation.args == {"filter": {"country": "Spain"}}
     assert Decimal(computation.result["spend_eur"]) == Decimal("2300.00")
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-3", "INV-4", "INV-6"]
-    assert {row.fields["country"] for row in response.evidence.source_rows} == {"Spain"}
-    assert response.evidence.source_rows[0].fields == {
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == ["INV-3", "INV-4", "INV-6"]
+    assert {row.fields["country"] for row in response.evidence.invoice_rows} == {"Spain"}
+    assert response.evidence.invoice_rows[0].fields == {
         "invoice_date": "2025-03-05",
         "vendor_id": "V-2",
         "vendor_name": "Beta S.L.",
@@ -101,6 +101,20 @@ def test_the_model_sees_the_tool_results_before_its_answer_is_accepted(spend_dat
     assert Decimal(result["content"][0]["json"]["spend_eur"]) == Decimal("2300.00")
 
 
+def test_invoice_and_vendor_source_rows_appear_in_that_order_in_the_serialized_evidence(spend_data):
+    client = FakeConverseClient(
+        [tool_use("t1", {"filter": {"vendor_id": "V-3"}}), tool_use("t2", {"filter": {"vendor_id": "V-3"}}, name="get_vendors")],
+        [submit_answer("V-3 is currently ON_HOLD.", vendor_ids=["V-3"])],
+    )
+
+    rows = ask(spend_data, client).model_dump(mode="json")["evidence"]["rows"]
+
+    assert [(row["kind"], row.get("invoice_number") or row.get("vendor_id")) for row in rows] == [
+        ("invoice", "INV-5"),
+        ("vendor", "V-3"),
+    ]
+
+
 def test_evidence_covers_every_computation_run_whatever_the_answer_mentions(spend_data):
     client = FakeConverseClient(
         [tool_use("t1", {"filter": {"vendor_id": "V-1"}}), tool_use("t2", {"filter": {"vendor_id": "V-3"}})],
@@ -113,7 +127,7 @@ def test_evidence_covers_every_computation_run_whatever_the_answer_mentions(spen
         {"filter": {"vendor_id": "V-1"}},
         {"filter": {"vendor_id": "V-3"}},
     ]
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-1", "INV-2", "INV-5"]
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == ["INV-1", "INV-2", "INV-5"]
 
 
 def test_top_n_source_rows_are_every_invoice_behind_the_totals(spend_data):
@@ -124,9 +138,10 @@ def test_top_n_source_rows_are_every_invoice_behind_the_totals(spend_data):
 
     response = ask(spend_data, client, "Top vendor by Spend")
 
-    assert [row.invoice_number for row in response.evidence.source_rows] == [
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == [
         "INV-1", "INV-2", "INV-3", "INV-4", "INV-5", "INV-6",
     ]
+    assert [row.vendor_id for row in response.evidence.vendor_rows] == ["V-2"]
 
 
 def test_invalid_tool_arguments_are_returned_to_the_model_and_are_not_computations(spend_data):
@@ -200,7 +215,7 @@ def test_tools_requested_alongside_submit_answer_still_run_and_are_in_the_eviden
 
     assert response.answer == "Spanish vendors total EUR 2,300.00."
     assert [c.args for c in response.evidence.computations] == [{"filter": {"country": "Spain"}}]
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-3", "INV-4", "INV-6"]
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == ["INV-3", "INV-4", "INV-6"]
     assert response.warnings == []
 
 
@@ -308,7 +323,7 @@ def test_a_cited_invoice_that_no_tool_returned_is_dropped_with_a_warning(spend_d
 
     response = ask(spend_data, client, "Spend with V-1")
 
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-1", "INV-2"]
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == ["INV-1", "INV-2"]
     [warning] = response.warnings
     assert "INV-999" in warning
     assert "INV-1 " not in warning + " "
@@ -378,8 +393,8 @@ def test_a_maverick_spend_listing_brings_its_source_rows_and_cites_section_2_2_a
     [computation] = response.evidence.computations
     assert computation.tool == "list_invoices"
     assert [row["invoice_number"] for row in computation.result["invoices"]] == ["INV-3"]
-    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-3"]
-    assert response.evidence.source_rows[0].fields["rate_date"] == "2025-03-05"
+    assert [row.invoice_number for row in response.evidence.invoice_rows] == ["INV-3"]
+    assert response.evidence.invoice_rows[0].fields["rate_date"] == "2025-03-05"
     assert [ref.section for ref in response.evidence.policy_references] == ["2.2", "4.1", "9.1"]
     assert response.warnings == []
 
@@ -395,7 +410,11 @@ def test_vendors_found_by_get_vendors_can_be_cited(spend_data):
     [computation] = response.evidence.computations
     assert computation.tool == "get_vendors"
     assert [vendor["vendor_id"] for vendor in computation.result["vendors"]] == ["V-2", "V-3"]
-    assert response.evidence.source_rows == []
+    assert response.evidence.invoice_rows == []
+    assert [(row.vendor_id, row.fields) for row in response.evidence.vendor_rows] == [
+        ("V-2", {"vendor_name": "Beta S.L.", "country": "Spain", "category": "Clinical Supplies", "vendor_status": "INACTIVE"}),
+        ("V-3", {"vendor_name": "Gamma Ltd", "country": "UK", "category": "IT Services", "vendor_status": "ON_HOLD"}),
+    ]
     assert [ref.section for ref in response.evidence.policy_references] == ["4.1"]
     assert response.warnings == []
 
@@ -410,7 +429,7 @@ def test_the_system_prompt_says_maverick_spend_is_only_potential_because_of_the_
     prompt = system_prompt_sent(spend_data)
 
     assert "Maverick Spend is always *potential*" in prompt
-    assert "§9" in prompt and "§2.2" in prompt
+    assert "name §2.2 and the §9 emergency exceptions in the answer text itself" in prompt
 
 
 def test_the_system_prompt_says_vendor_status_is_current(spend_data):
