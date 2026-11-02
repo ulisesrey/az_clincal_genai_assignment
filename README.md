@@ -42,6 +42,18 @@ npm run dev                           # serves http://localhost:5173
 
 The frontend calls the backend at `http://localhost:8000` by default. To use a different address, set `VITE_API_URL`. If the frontend runs on another origin, add it to `FRONTEND_ORIGINS` on the backend (comma-separated).
 
+### Makefile shortcuts
+
+From the repo root, `make help` lists all targets. The most common:
+
+```sh
+make install      # uv sync + npm install
+make dev          # backend + frontend in one terminal; Ctrl-C stops both
+make test         # backend pytest
+make e2e          # Playwright end-to-end tests
+make typecheck    # pyright + tsc
+```
+
 ## Tests
 
 ### Backend
