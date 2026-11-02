@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { askQuestion, formatMoney, type AskResponse, type Computation, type PolicyReference, type SourceRow, type VendorRow } from "./api";
+import {
+  askQuestion,
+  formatMoney,
+  type AskResponse,
+  type Computation,
+  type InvoiceSourceRow,
+  type PolicyReference,
+  type SourceRow,
+  type VendorSourceRow,
+} from "./api";
 
 interface Question {
   id: number;
@@ -98,7 +107,7 @@ function Answer({ response }: { response: AskResponse }) {
       </details>
       <details>
         <summary>Source Rows</summary>
-        {sourceRows.length === 0 ? <p>No Source Rows.</p> : <SourceRowsTable sourceRows={sourceRows} />}
+        {sourceRows.length === 0 ? <p>No Source Rows.</p> : <SourceRows sourceRows={sourceRows} />}
       </details>
     </div>
   );
@@ -195,52 +204,24 @@ function ComputationView({ number, computation }: { number: number; computation:
         </table>
       )}
       {!!result.groups_omitted && <p>{result.groups_omitted} lower-ranked groups not shown.</p>}
-      {result.invoices && (
-        <p>
-          Listed {result.invoices.length} of {result.invoice_count} matching invoices
-          {!!result.invoices_omitted && `; ${result.invoices_omitted} beyond the limit not listed`}.
-        </p>
-      )}
-      {result.vendors && <VendorsTable number={number} vendors={result.vendors} />}
     </figure>
   );
 }
 
-function VendorsTable({ number, vendors }: { number: number; vendors: VendorRow[] }) {
-  if (vendors.length === 0) return <p>No vendors matched.</p>;
+function SourceRows({ sourceRows }: { sourceRows: SourceRow[] }) {
+  const invoices = sourceRows.filter((row): row is InvoiceSourceRow => row.kind === "invoice");
+  const vendors = sourceRows.filter((row): row is VendorSourceRow => row.kind === "vendor");
   return (
-    <table aria-label={`Computation ${number} vendors`}>
-      <thead>
-        <tr>
-          <th scope="col">Vendor</th>
-          <th scope="col">Name</th>
-          <th scope="col">Country</th>
-          <th scope="col">Category</th>
-          <th scope="col">Vendor Status (current)</th>
-          <th scope="col">Net Spend (EUR-Equivalent)</th>
-          <th scope="col">Invoices</th>
-        </tr>
-      </thead>
-      <tbody>
-        {vendors.map((vendor) => (
-          <tr key={vendor.vendor_id} data-testid="vendor-row" data-vendor-id={vendor.vendor_id}>
-            <th scope="row">{vendor.vendor_id}</th>
-            <td>{vendor.vendor_name}</td>
-            <td>{vendor.country}</td>
-            <td>{vendor.category}</td>
-            <td data-testid="vendor-status">{vendor.vendor_status}</td>
-            <td>{formatMoney(vendor.spend_eur, "EUR")}</td>
-            <td>{vendor.invoice_count}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <>
+      {invoices.length > 0 && <InvoiceSourceRowsTable rows={invoices} />}
+      {vendors.length > 0 && <VendorSourceRowsTable rows={vendors} />}
+    </>
   );
 }
 
-function SourceRowsTable({ sourceRows }: { sourceRows: SourceRow[] }) {
+function InvoiceSourceRowsTable({ rows }: { rows: InvoiceSourceRow[] }) {
   return (
-    <table aria-label="Source Rows">
+    <table aria-label="Invoice Source Rows">
       <thead>
         <tr>
           <th scope="col">Invoice</th>
@@ -255,26 +236,52 @@ function SourceRowsTable({ sourceRows }: { sourceRows: SourceRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {sourceRows.map(({ invoice_number, fields }) => (
+        {rows.map(({ invoice_number, fields }) => (
           <tr key={invoice_number} data-testid="source-row" data-invoice-number={invoice_number}>
             <th scope="row" data-testid="source-row-invoice">
               {invoice_number}
             </th>
             <td>{fields.invoice_date}</td>
-            <td data-testid="source-row-vendor" data-vendor-id={fields.vendor_id ?? undefined}>
+            <td data-testid="source-row-vendor" data-vendor-id={fields.vendor_id}>
               {fields.vendor_id} {fields.vendor_name}
             </td>
             <td data-testid="source-row-country">{fields.country}</td>
             <td data-testid="source-row-vendor-status">{fields.vendor_status}</td>
-            <td data-testid="source-row-amount" data-amount={fields.amount ?? undefined} data-currency={fields.currency ?? undefined}>
-              {fields.amount && fields.currency && formatMoney(fields.amount, fields.currency)}
-              {fields.amount?.startsWith("-") && " (Credit Note)"}
+            <td data-testid="source-row-amount" data-amount={fields.amount} data-currency={fields.currency}>
+              {formatMoney(fields.amount, fields.currency)}
             </td>
-            <td data-testid="source-row-eur" data-amount={fields.eur_equivalent ?? undefined}>
-              {fields.eur_equivalent && formatMoney(fields.eur_equivalent, "EUR")}
+            <td data-testid="source-row-eur" data-amount={fields.eur_equivalent}>
+              {formatMoney(fields.eur_equivalent, "EUR")}
             </td>
             <td data-testid="source-row-rate">{fields.ecb_rate ?? "—"}</td>
             <td data-testid="source-row-rate-date">{fields.rate_date ?? "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function VendorSourceRowsTable({ rows }: { rows: VendorSourceRow[] }) {
+  return (
+    <table aria-label="Vendor Source Rows">
+      <thead>
+        <tr>
+          <th scope="col">Vendor</th>
+          <th scope="col">Name</th>
+          <th scope="col">Country</th>
+          <th scope="col">Category</th>
+          <th scope="col">Vendor Status (current)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ vendor_id, fields }) => (
+          <tr key={vendor_id} data-testid="vendor-source-row" data-vendor-id={vendor_id}>
+            <th scope="row">{vendor_id}</th>
+            <td>{fields.vendor_name}</td>
+            <td>{fields.country}</td>
+            <td>{fields.category}</td>
+            <td data-testid="vendor-source-row-status">{fields.vendor_status}</td>
           </tr>
         ))}
       </tbody>

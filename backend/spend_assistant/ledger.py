@@ -67,6 +67,21 @@ def invoices_by_number(ledger: pd.DataFrame, invoice_numbers: set[str]) -> list[
     return ledger.loc[ledger["invoice_number"].isin(list(invoice_numbers))].to_dict("records")
 
 
+def vendors_by_id(vendors: pd.DataFrame, vendor_ids: set[str]) -> list[dict[str, Any]]:
+    """The Vendor Master rows for these vendor IDs, in Vendor Master order."""
+    return vendors.loc[vendors["vendor_id"].isin(list(vendor_ids))].to_dict("records")
+
+
+def vendor_fields(vendor: dict[str, Any]) -> dict[str, str | None]:
+    """A vendor's Vendor Master fields, for display as a Source Row."""
+    return {
+        "vendor_name": vendor["vendor_name"],
+        "country": vendor["country"],
+        "category": vendor["category"],
+        "vendor_status": vendor["vendor_status"],
+    }
+
+
 def invoice_fields(invoice: dict[str, Any]) -> dict[str, str | None]:
     """An invoice's identifying, vendor and currency fields as strings, for display as a Source Row."""
     return {
