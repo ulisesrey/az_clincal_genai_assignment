@@ -114,8 +114,8 @@ export async function askQuestion(question: string): Promise<AskResponse> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const detail = body?.error ? `: ${body.error}` : "";
-    throw new Error(`Question failed (HTTP ${response.status})${detail}`);
+    const reason = [body?.error, body?.detail].filter(Boolean).join(": ");
+    throw new Error(`Question failed (HTTP ${response.status})${reason ? `: ${reason}` : ""}`);
   }
   return response.json();
 }

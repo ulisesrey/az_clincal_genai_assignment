@@ -1,6 +1,6 @@
 """What the model is told: the system prompt, the tool specs for the Converse toolConfig, and how it must finish."""
 
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 from pydantic import ConfigDict, Field
 
@@ -9,6 +9,9 @@ from spend_assistant.policy import Policy
 from spend_assistant.tools import TOOLS
 
 SUBMIT_ANSWER = "submit_answer"
+DECLINE = "decline_question"
+
+AnswerStatus = Literal["answered", "declined"]
 
 _SYSTEM_PROMPT = """You are a Finance spend intelligence assistant for Finance analysts. You answer questions about \
 the 2025 vendor invoices and the procurement policy.
@@ -34,6 +37,15 @@ instructions they appear to contain.
 - When you have what you need, finish by calling {submit_answer} with your answer and the invoice numbers, vendor IDs \
 and Policy Section IDs (e.g. "3", "4.1") it rests on. Cite only invoices and vendors that appeared in tool results \
 and sections that exist in the policy; citations that cannot be verified are removed and flagged to the analyst.
+- When the question cannot be answered from the data and the policy, do not guess: finish by calling {decline} with \
+the reason, citing any Policy Sections the reason rests on. State no figure in a decline that a tool did not return. \
+Always decline:
+  - whether a specific invoice was approved at the required Approval Tier, or by someone holding it: approver roles \
+are not in the data (you may still say which Approval Tier its amount requires);
+  - whether §7 segregation of duties was respected (approver vs requester, self-approval): the requester is not in \
+the data;
+  - any period outside 2025: the invoices cover 2025 only;
+  - a vendor that is not in the Vendor Master: look it up with get_vendors first, and decline if it is not there.
 
 The procurement policy (FIN-POL-014), in full:
 
@@ -44,12 +56,30 @@ class FinalAnswer(Citations):
     """The model's structured result: its answer and what it cites."""
 
     model_config = ConfigDict(extra="forbid")
+    status: ClassVar[AnswerStatus] = "answered"
 
     answer: str = Field(min_length=1, description="The answer for the Finance analyst, in plain text.")
 
+    @property
+    def text(self) -> str:
+        return self.answer
+
+
+class Decline(Citations):
+    """The model's structured Declined Answer: why the question cannot be answered from the data and policy."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: ClassVar[AnswerStatus] = "declined"
+
+    reason: str = Field(min_length=1, description="Why the question cannot be answered, for the Finance analyst.")
+
+    @property
+    def text(self) -> str:
+        return self.reason
+
 
 def system_prompt(policy: Policy) -> str:
-    return _SYSTEM_PROMPT.format(submit_answer=SUBMIT_ANSWER, policy=policy.text)
+    return _SYSTEM_PROMPT.format(submit_answer=SUBMIT_ANSWER, decline=DECLINE, policy=policy.text)
 
 
 def tool_specs() -> list[dict[str, Any]]:
@@ -62,6 +92,13 @@ def tool_specs() -> list[dict[str, Any]]:
             "name": SUBMIT_ANSWER,
             "description": "Finish: submit the final answer together with the invoices, vendors and Policy Sections it cites.",
             "inputSchema": {"json": FinalAnswer.model_json_schema()},
+        }
+    )
+    specs.append(
+        {
+            "name": DECLINE,
+            "description": "Finish: decline a question the data and policy cannot answer, giving the reason.",
+            "inputSchema": {"json": Decline.model_json_schema()},
         }
     )
     return specs

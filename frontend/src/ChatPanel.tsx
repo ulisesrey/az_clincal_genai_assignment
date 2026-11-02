@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   askQuestion,
@@ -63,8 +63,10 @@ function ChatMessage({ question }: { question: string }) {
       </p>
       {ask.isPending && <p role="status">Answering…</p>}
       {ask.isError && (
-        <div role="alert">
-          <p>Could not answer: {ask.error.message}</p>
+        <div role="alert" data-look="error" style={LOOKS.error}>
+          <p>
+            <strong>Error</strong>: could not answer. {ask.error.message}
+          </p>
           <button type="button" onClick={() => ask.mutate(question)}>
             Retry
           </button>
@@ -75,17 +77,31 @@ function ChatMessage({ question }: { question: string }) {
   );
 }
 
+type Look = "answered" | "warned" | "declined" | "error";
+
+// Each outcome looks different, so a Declined Answer is never mistaken for an answer or for an error.
+const LOOKS: Record<Look, CSSProperties> = {
+  answered: { padding: "0.5rem" },
+  warned: { border: "2px solid #b45309", background: "#fffbeb", padding: "0.5rem" },
+  declined: { border: "2px dashed #475569", background: "#f1f5f9", padding: "0.5rem" },
+  error: { border: "2px solid #b91c1c", background: "#fef2f2", color: "#7f1d1d", padding: "0.5rem" },
+};
+
 function Answer({ response }: { response: AskResponse }) {
   const { computations, rows: sourceRows, policy_refs: policyRefs } = response.evidence;
   const warned = response.warnings.length > 0;
+  const declined = response.status === "declined";
+  const look: Look = declined ? "declined" : warned ? "warned" : "answered";
   return (
-    <div
-      className={`answer answer-${response.status}${warned ? " answer-warned" : ""}`}
-      style={warned ? { border: "2px solid #b45309", background: "#fffbeb", padding: "0.5rem" } : undefined}
-    >
+    <div data-look={look} style={LOOKS[look]}>
       <p>
         <span data-testid="answer-status">{response.status}</span>
       </p>
+      {declined && (
+        <p>
+          <strong>Declined Answer</strong>: this can't be answered from the data and policy. Reason:
+        </p>
+      )}
       <p data-testid="answer-text" style={{ whiteSpace: "pre-wrap" }}>{response.answer}</p>
       {warned && (
         <ul aria-label="Warnings" data-testid="answer-warnings" style={{ color: "#92400e", fontWeight: "bold" }}>
