@@ -52,8 +52,19 @@ export interface Computation {
     by_currency?: CurrencyBreakdown[];
     groups?: SpendGroup[] | null;
     groups_omitted?: number;
+    approval_tier?: string;
+    amount?: Money;
+    currency?: OriginalCurrency;
+    eur_equivalent?: Money;
+    ecb_rate?: string | null;
+    rate_date?: string | null;
     [field: string]: unknown;
   };
+}
+
+export interface PolicyReference {
+  section: string;
+  text: string;
 }
 
 export interface SourceRow {
@@ -65,7 +76,7 @@ export interface AskResponse {
   answer: string;
   status: "answered" | "declined";
   evidence: {
-    policy_refs: { section: string; text: string }[];
+    policy_refs: PolicyReference[];
     rows: SourceRow[];
     computations: Computation[];
   };

@@ -23,7 +23,10 @@ export async function ask(page: Page, question: string): Promise<Locator> {
 }
 
 /** Expands a collapsed Evidence section of an answer and returns it. */
-export async function openEvidence(message: Locator, section: "Computation" | "Source Rows"): Promise<Locator> {
+export async function openEvidence(
+  message: Locator,
+  section: "Policy References" | "Computation" | "Source Rows",
+): Promise<Locator> {
   const details = message.locator("details").filter({ has: message.page().getByText(section, { exact: true }) });
   await expect(details).not.toHaveAttribute("open");
   await details.getByText(section, { exact: true }).click();

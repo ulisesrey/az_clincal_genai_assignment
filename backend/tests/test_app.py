@@ -25,18 +25,18 @@ def frontend_origin(monkeypatch):
     monkeypatch.setenv("FRONTEND_ORIGINS", ORIGIN)
 
 
-def post_ask(ledger, provider: ScriptedProvider):
-    client = TestClient(create_app(ledger, provider), raise_server_exceptions=False)
+def post_ask(ledger, policy, rates, provider: ScriptedProvider):
+    client = TestClient(create_app(ledger, provider, policy, rates), raise_server_exceptions=False)
     return client.post("/ask", json={"question": "Spend in Spain?"}, headers={"Origin": ORIGIN})
 
 
-def test_ask_returns_the_answer_with_evidence(ledger):
+def test_ask_returns_the_answer_with_evidence(ledger, policy, rates):
     provider = ScriptedProvider(
         [{"toolUse": {"toolUseId": "t1", "name": "aggregate_spend", "input": {"filter": {"country": "Spain"}}}}],
-        [{"text": "EUR 2,300.00."}],
+        [{"toolUse": {"toolUseId": "f", "name": "submit_answer", "input": {"answer": "EUR 2,300.00."}}}],
     )
 
-    response = post_ask(ledger, provider)
+    response = post_ask(ledger, policy, rates, provider)
 
     assert response.status_code == 200
     body = response.json()
@@ -48,27 +48,48 @@ def test_ask_returns_the_answer_with_evidence(ledger):
     assert [c["result"]["spend_eur"] for c in body["evidence"]["computations"]] == ["2300.00"]
 
 
-def test_a_bedrock_failure_is_a_502_the_browser_can_read(ledger):
-    response = post_ask(ledger, ScriptedProvider(ProviderError("Bedrock Converse failed")))
+def test_a_bedrock_failure_is_a_502_the_browser_can_read(ledger, policy, rates):
+    response = post_ask(ledger, policy, rates, ScriptedProvider(ProviderError("Bedrock Converse failed")))
 
     assert response.status_code == 502
     assert response.json()["error"] == "LLM provider failed"
     assert response.headers["access-control-allow-origin"] == ORIGIN
 
 
-def test_no_answer_within_the_iteration_limit_is_a_502(ledger):
+def test_no_answer_within_the_iteration_limit_is_a_502(ledger, policy, rates):
     endless = [{"toolUse": {"toolUseId": "t", "name": "aggregate_spend", "input": {}}}]
-    response = post_ask(ledger, ScriptedProvider(*[endless] * 5))
+    response = post_ask(ledger, policy, rates, ScriptedProvider(*[endless] * 5))
 
     assert response.status_code == 502
     assert set(response.json()) == {"error", "detail"}
     assert response.headers["access-control-allow-origin"] == ORIGIN
 
 
-def test_an_unexpected_failure_is_a_500_that_hides_internals_and_the_browser_can_read(ledger):
-    response = post_ask(ledger, ScriptedProvider(RuntimeError("secret internal state at /srv/app")))
+def test_an_unexpected_failure_is_a_500_that_hides_internals_and_the_browser_can_read(ledger, policy, rates):
+    response = post_ask(ledger, policy, rates, ScriptedProvider(RuntimeError("secret internal state at /srv/app")))
 
     assert response.status_code == 500
     assert response.json() == {"error": "Internal error", "detail": "The server could not answer the question."}
     assert "secret" not in response.text
     assert response.headers["access-control-allow-origin"] == ORIGIN
+
+
+def test_ask_returns_policy_references_with_verbatim_text_and_warnings_for_dropped_citations(ledger, policy, rates):
+    provider = ScriptedProvider(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "t1",
+                    "name": "submit_answer",
+                    "input": {"answer": "Only ACTIVE vendors.", "policy_sections": ["4.1", "9.9"], "invoice_numbers": ["INV-404"]},
+                }
+            }
+        ],
+    )
+
+    body = post_ask(ledger, policy, rates, provider).json()
+
+    assert body["evidence"]["policy_refs"] == [{"section": "4.1", "text": "Only ACTIVE vendors may be paid."}]
+    assert len(body["warnings"]) == 2
+    assert any("9.9" in warning for warning in body["warnings"])
+    assert any("INV-404" in warning for warning in body["warnings"])
