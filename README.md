@@ -2,6 +2,44 @@
 
 A prototype assistant for Finance analysts. It answers questions about the 2025 vendor invoices and the procurement policy (FIN-POL-014) and shows the Evidence behind each answer. The domain vocabulary is defined in [GLOSSARY.md](GLOSSARY.md), and the decisions behind the design are in [docs/adr/](docs/adr/).
 
+## Write-up
+
+**LLM path.** Real calls to AWS Bedrock through the Converse API with native tool calling. The model is set by `BEDROCK_MODEL_ID`.
+
+### What I built, and what I left out
+
+I put correctness and traceability before breadth. The model never does arithmetic. It calls four typed analytics tools (`aggregate_spend`, `list_invoices`, `get_vendors`, `required_approval_tier`, defined in [tools.py](backend/spend_assistant/tools.py)), and Python computes every figure ([ADR 0001](docs/adr/0001-typed-analytics-tools.md)). Each answer shows its Evidence: policy references, Source Rows and the Computation behind it. Citations that can't be verified are dropped and flagged. Questions the data can't answer get a Declined Answer instead of a guess. Currency conversion uses a frozen ECB snapshot ([ADR 0002](docs/adr/0002-frozen-ecb-rate-snapshot.md)). The vocabulary is in [GLOSSARY.md](GLOSSARY.md).
+
+Left out, to stay inside the time box:
+
+- Optional extras.
+- Multi-turn conversation. Each question stands alone.
+- A code interpreter, deferred in ADR 0001 until lineage from generated code can be captured.
+- Auth and Docker.
+
+### How I would evaluate it
+
+1. **Golden set.** Questions with expected figures computed independently with pandas from the raw CSVs and ECB file, compared with the figures in each answer's Computations. The e2e tests do this for a few questions today.
+2. **Grounding metrics.** The dropped-citation rate, and whether every number in the answer text appears in a Computation. Both are checkable by code.
+3. **Must-decline set.** Out-of-scope questions (other years, unknown vendors, approver-tier and segregation-of-duties checks, prompt-injection attempts) that must return a Declined Answer. The metric is the share correctly declined, plus the share of answerable questions wrongly declined.
+4. **LLM-as-judge for faithfulness**, checking that the prose matches the Evidence, plus a sample reviewed by Finance experts to calibrate the judge.
+
+### What production would need
+
+For 200 Finance users on real data:
+
+- SSO, and row-level access control enforced inside the tools, not in the prompt.
+- An append-only §8.2 audit record per question (question, tool calls, Evidence, answer, user), kept for 10 years under §8.1.
+- ERP (Enterprise Resource Planning) data feeds in place of CSV files.
+- Defences against prompt injection through free-text invoice fields (already treated as data, but untested at scale).
+- Cost controls: per-user rate limits and token budgets, caching and model choice.
+- Observability: tracing of each agent loop, latency, error rates and the evaluation metrics above on live traffic.
+
+
+### Time spent and next steps
+
+About 4 hours. Next steps: build the evaluation layers above, add multi-turn, then evaluate a code interpreter for questions the typed tools can't express.
+
 ## Setup
 
 ### 1. Data pack
