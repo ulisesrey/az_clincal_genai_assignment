@@ -30,7 +30,9 @@ The chat panel's answers come from AWS Bedrock (Converse API with native tool ca
 - `AWS_REGION`: the Bedrock region (default `eu-west-1`).
 - Credentials from the standard AWS credential chain (environment variables, `AWS_PROFILE`, SSO or `aws login`). The account needs `bedrock:InvokeModel` access to the model.
 
-`POST /ask` returns a 502 with `{ error, detail }` if Bedrock can't be reached or the model doesn't answer within 5 turns. Unexpected errors return a 500 that hides internal details.
+`POST /ask` returns a Declined Answer (`status: "declined"` with the reason as `answer`) when the question can't be answered from the data and policy. Examples: whether an approver held the required Approval Tier, §7 segregation of duties, years other than 2025, and vendors not in the Vendor Master. It also declines when the model doesn't finish within 5 tool-call iterations, or sends invalid tool arguments again after one correction.
+
+Each Bedrock call times out after 30s, with no retries. A timeout returns a 504 and other Bedrock failures return a 502, both with `{ error, detail }`. Unexpected errors return a 500 that hides internal details.
 
 ### 3. Frontend (Node 20+)
 

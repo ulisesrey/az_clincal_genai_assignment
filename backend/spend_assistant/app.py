@@ -7,9 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from spend_assistant.agent import Agent, AnswerNotReached, AskResponse
+from spend_assistant.agent import Agent, AskResponse
 from spend_assistant.ledger import SpendData
-from spend_assistant.llm import ChatProvider, ProviderError
+from spend_assistant.llm import ChatProvider, ProviderError, ProviderTimeout
 from spend_assistant.policy import Policy
 from spend_assistant.summary import Summary, summarize
 
@@ -47,11 +47,9 @@ def create_app(data: SpendData, provider: ChatProvider, policy: Policy) -> FastA
     @app.exception_handler(ProviderError)
     async def provider_failed(_: Request, error: ProviderError) -> JSONResponse:
         logger.warning("LLM provider failed: %s", error)
+        if isinstance(error, ProviderTimeout):
+            return JSONResponse(status_code=504, content={"error": "LLM provider timed out", "detail": str(error)})
         return JSONResponse(status_code=502, content={"error": "LLM provider failed", "detail": str(error)})
-
-    @app.exception_handler(AnswerNotReached)
-    async def answer_not_reached(_: Request, error: AnswerNotReached) -> JSONResponse:
-        return JSONResponse(status_code=502, content={"error": "No answer reached", "detail": str(error)})
 
     @app.get("/summary")
     def get_summary() -> Summary:

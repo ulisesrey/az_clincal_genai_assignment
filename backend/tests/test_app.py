@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from spend_assistant.app import create_app
-from spend_assistant.llm import ProviderError
+from spend_assistant.llm import ProviderError, ProviderTimeout
 
 ORIGIN = "http://localhost:5199"
 
@@ -52,17 +52,36 @@ def test_a_bedrock_failure_is_a_502_the_browser_can_read(spend_data, policy):
     response = post_ask(spend_data, policy, ScriptedProvider(ProviderError("Bedrock Converse failed")))
 
     assert response.status_code == 502
-    assert response.json()["error"] == "LLM provider failed"
+    assert response.json() == {"error": "LLM provider failed", "detail": "Bedrock Converse failed"}
     assert response.headers["access-control-allow-origin"] == ORIGIN
 
 
-def test_no_answer_within_the_iteration_limit_is_a_502(spend_data, policy):
+def test_a_bedrock_timeout_is_a_504_the_browser_can_read(spend_data, policy):
+    response = post_ask(spend_data, policy, ScriptedProvider(ProviderTimeout("Bedrock timed out after 30s")))
+
+    assert response.status_code == 504
+    assert response.json() == {"error": "LLM provider timed out", "detail": "Bedrock timed out after 30s"}
+    assert response.headers["access-control-allow-origin"] == ORIGIN
+
+
+def test_no_answer_within_the_iteration_limit_is_a_declined_answer(spend_data, policy):
     endless = [{"toolUse": {"toolUseId": "t", "name": "aggregate_spend", "input": {}}}]
     response = post_ask(spend_data, policy, ScriptedProvider(*[endless] * 5))
 
-    assert response.status_code == 502
-    assert set(response.json()) == {"error", "detail"}
-    assert response.headers["access-control-allow-origin"] == ORIGIN
+    assert response.status_code == 200
+    assert response.json()["status"] == "declined"
+
+
+def test_a_declined_answer_is_returned_with_its_reason(spend_data, policy):
+    provider = ScriptedProvider(
+        [{"toolUse": {"toolUseId": "d", "name": "decline_question", "input": {"reason": "Only 2025 is covered."}}}],
+    )
+
+    response = post_ask(spend_data, policy, provider)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "declined"
+    assert response.json()["answer"] == "Only 2025 is covered."
 
 
 def test_an_unexpected_failure_is_a_500_that_hides_internals_and_the_browser_can_read(spend_data, policy):
