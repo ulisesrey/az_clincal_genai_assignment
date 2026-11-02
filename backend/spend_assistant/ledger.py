@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -46,6 +47,19 @@ def build_vendor_master(pack: DataPack) -> pd.DataFrame:
     vendors = pack.vendors.rename(columns={"status": "vendor_status"})
     vendors["is_non_active_vendor"] = vendors["vendor_status"].isin(NON_ACTIVE_VENDOR_STATUSES)
     return vendors
+
+
+@dataclass(frozen=True)
+class SpendData:
+    """Everything questions are answered from: the ledger, the Vendor Master and the ECB Reference Rates."""
+
+    ledger: pd.DataFrame
+    vendors: pd.DataFrame
+    rates: EcbRates
+
+
+def load_spend_data(pack: DataPack, rates: EcbRates) -> SpendData:
+    return SpendData(ledger=build_ledger(pack, rates), vendors=build_vendor_master(pack), rates=rates)
 
 
 def invoices_by_number(ledger: pd.DataFrame, invoice_numbers: set[str]) -> list[dict[str, Any]]:

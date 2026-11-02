@@ -3,15 +3,14 @@
 import json
 from typing import Any, Literal
 
-import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
 from spend_assistant.evidence import Citations, Computation, Evidence, ToolCall, assemble_evidence
-from spend_assistant.fx import EcbRates
+from spend_assistant.ledger import SpendData
 from spend_assistant.llm import ChatProvider
 from spend_assistant.policy import Policy
 from spend_assistant.prompt import SUBMIT_ANSWER, FinalAnswer, system_prompt, tool_specs
-from spend_assistant.tools import TOOLS, ToolContext
+from spend_assistant.tools import TOOLS
 
 MAX_TOOL_ITERATIONS = 5
 
@@ -32,13 +31,10 @@ class AnswerNotReached(Exception):
 
 
 class Agent:
-    def __init__(
-        self, ledger: pd.DataFrame, vendors: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates
-    ) -> None:
-        self.ledger = ledger
+    def __init__(self, data: SpendData, provider: ChatProvider, policy: Policy) -> None:
+        self.data = data
         self.provider = provider
         self.policy = policy
-        self.context = ToolContext(ledger, vendors, rates)
         self.system_prompt = system_prompt(policy)
         self.tool_specs = tool_specs()
 
@@ -74,7 +70,7 @@ class Agent:
         raise AnswerNotReached(f"No answer within {MAX_TOOL_ITERATIONS} model turns.")
 
     def _respond(self, answer: str, citations: Citations, tool_calls: list[ToolCall]) -> AskResponse:
-        evidence, warnings = assemble_evidence(self.ledger, self.policy, tool_calls, citations)
+        evidence, warnings = assemble_evidence(self.data, self.policy, tool_calls, citations)
         return AskResponse(answer=answer, status="answered", evidence=evidence, warnings=warnings)
 
     def _run_tool(self, tool_use: dict[str, Any], tool_calls: list[ToolCall]) -> dict[str, Any]:
@@ -87,7 +83,7 @@ class Agent:
         except ValidationError as error:
             return _tool_result(tool_use, {"error": str(error)}, error=True)
 
-        result = tool.run(self.context, args)
+        result = tool.run(self.data, args)
         computation = Computation(
             tool=tool.name,
             args=args.model_dump(mode="json", exclude_unset=True, exclude_none=True),

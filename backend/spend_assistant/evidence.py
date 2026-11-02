@@ -4,10 +4,9 @@ and the parsed policy, never from text the model wrote. What the model cites is 
 from dataclasses import dataclass, field
 from typing import Any
 
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
-from spend_assistant.ledger import invoice_fields, invoices_by_number
+from spend_assistant.ledger import SpendData, invoice_fields, invoices_by_number
 from spend_assistant.policy import Policy, normalize_section_id
 
 
@@ -54,7 +53,7 @@ class Evidence(BaseModel):
 
 
 def assemble_evidence(
-    ledger: pd.DataFrame, policy: Policy, tool_calls: list[ToolCall], citations: Citations
+    data: SpendData, policy: Policy, tool_calls: list[ToolCall], citations: Citations
 ) -> tuple[Evidence, list[str]]:
     """The Evidence for the tool calls made, and a warning for each citation dropped because it could not be verified.
 
@@ -62,7 +61,7 @@ def assemble_evidence(
     Policy References are the Policy Sections a tool rests on plus the existing sections the model cited.
     """
     returned_invoices = {number for call in tool_calls for number in call.invoice_numbers}
-    invoices = invoices_by_number(ledger, returned_invoices)
+    invoices = invoices_by_number(data.ledger, returned_invoices)
     returned_vendors = {invoice["vendor_id"] for invoice in invoices} | {
         vendor_id for call in tool_calls for vendor_id in call.vendor_ids
     }

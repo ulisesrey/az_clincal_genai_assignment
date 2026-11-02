@@ -2,14 +2,13 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 
-import pandas as pd
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from spend_assistant.agent import Agent, AnswerNotReached, AskResponse
-from spend_assistant.fx import EcbRates
+from spend_assistant.ledger import SpendData
 from spend_assistant.llm import ChatProvider, ProviderError
 from spend_assistant.policy import Policy
 from spend_assistant.summary import Summary, summarize
@@ -21,12 +20,10 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
 
-def create_app(
-    ledger: pd.DataFrame, vendors: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates
-) -> FastAPI:
+def create_app(data: SpendData, provider: ChatProvider, policy: Policy) -> FastAPI:
     app = FastAPI(title="Finance Spend Intelligence")
-    summary = summarize(ledger)
-    agent = Agent(ledger, vendors, provider, policy, rates)
+    summary = summarize(data.ledger)
+    agent = Agent(data, provider, policy)
 
     # Registered before CORSMiddleware so it runs inside it and error responses still carry CORS headers.
     @app.middleware("http")

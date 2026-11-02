@@ -11,7 +11,7 @@ import pytest
 
 from spend_assistant.data_pack import DataPack
 from spend_assistant.fx import SNAPSHOT_PATH, EcbRates
-from spend_assistant.ledger import build_ledger, build_vendor_master
+from spend_assistant.ledger import SpendData, build_ledger, build_vendor_master
 from spend_assistant.policy import Policy, parse_policy
 
 # Same layout as the supplied policy (numbered headings, numbered clauses, a table under section 3), invented wording.
@@ -104,6 +104,11 @@ def vendors(data_pack: DataPack) -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def rates() -> EcbRates:
     return EcbRates()
+
+
+@pytest.fixture(scope="session")
+def spend_data(ledger: pd.DataFrame, vendors: pd.DataFrame, rates: EcbRates) -> SpendData:
+    return SpendData(ledger=ledger, vendors=vendors, rates=rates)
 
 
 @pytest.fixture(scope="session")
