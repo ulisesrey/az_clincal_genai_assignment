@@ -9,7 +9,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from spend_assistant.agent import Agent, AnswerNotReached, AskResponse
+from spend_assistant.fx import EcbRates
 from spend_assistant.llm import ChatProvider, ProviderError
+from spend_assistant.policy import Policy
 from spend_assistant.summary import Summary, summarize
 
 logger = logging.getLogger(__name__)
@@ -19,10 +21,10 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
 
-def create_app(ledger: pd.DataFrame, provider: ChatProvider) -> FastAPI:
+def create_app(ledger: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates) -> FastAPI:
     app = FastAPI(title="Finance Spend Intelligence")
     summary = summarize(ledger)
-    agent = Agent(ledger, provider)
+    agent = Agent(ledger, provider, policy, rates)
 
     # Registered before CORSMiddleware so it runs inside it and error responses still carry CORS headers.
     @app.middleware("http")

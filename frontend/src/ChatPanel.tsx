@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { askQuestion, formatMoney, type AskResponse, type Computation, type SourceRow } from "./api";
+import { askQuestion, formatMoney, type AskResponse, type Computation, type PolicyReference, type SourceRow } from "./api";
 
 interface Question {
   id: number;
@@ -67,20 +67,28 @@ function ChatMessage({ question }: { question: string }) {
 }
 
 function Answer({ response }: { response: AskResponse }) {
-  const { computations, rows: sourceRows } = response.evidence;
+  const { computations, rows: sourceRows, policy_refs: policyRefs } = response.evidence;
+  const warned = response.warnings.length > 0;
   return (
-    <div className={`answer answer-${response.status}`}>
+    <div
+      className={`answer answer-${response.status}${warned ? " answer-warned" : ""}`}
+      style={warned ? { border: "2px solid #b45309", background: "#fffbeb", padding: "0.5rem" } : undefined}
+    >
       <p>
         <span data-testid="answer-status">{response.status}</span>
       </p>
       <p style={{ whiteSpace: "pre-wrap" }}>{response.answer}</p>
-      {response.warnings.length > 0 && (
-        <ul aria-label="Warnings">
+      {warned && (
+        <ul aria-label="Warnings" data-testid="answer-warnings" style={{ color: "#92400e", fontWeight: "bold" }}>
           {response.warnings.map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
         </ul>
       )}
+      <details>
+        <summary>Policy References</summary>
+        {policyRefs.length === 0 ? <p>No Policy References.</p> : <PolicyReferences references={policyRefs} />}
+      </details>
       <details>
         <summary>Computation</summary>
         {computations.length === 0 && <p>No Computation was run.</p>}
@@ -93,6 +101,19 @@ function Answer({ response }: { response: AskResponse }) {
         {sourceRows.length === 0 ? <p>No Source Rows.</p> : <SourceRowsTable sourceRows={sourceRows} />}
       </details>
     </div>
+  );
+}
+
+function PolicyReferences({ references }: { references: PolicyReference[] }) {
+  return (
+    <>
+      {references.map(({ section, text }) => (
+        <blockquote key={section} data-testid="policy-ref">
+          <strong data-testid="policy-ref-section">§{section}</strong>
+          <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+        </blockquote>
+      ))}
+    </>
   );
 }
 
@@ -111,6 +132,22 @@ function ComputationView({ number, computation }: { number: number; computation:
         <p>
           Net Spend (EUR-Equivalent): <span data-testid="computation-spend">{formatMoney(result.spend_eur, "EUR")}</span>{" "}
           across {result.invoice_count} invoices
+        </p>
+      )}
+      {result.approval_tier !== undefined && result.eur_equivalent !== undefined && (
+        <p>
+          Approval Tier: <strong data-testid="approval-tier">{result.approval_tier}</strong> for{" "}
+          {result.currency && result.amount && formatMoney(result.amount, result.currency)}, an EUR-Equivalent of{" "}
+          <span data-testid="approval-eur-equivalent" data-amount={result.eur_equivalent}>
+            {formatMoney(result.eur_equivalent, "EUR")}
+          </span>
+          {result.ecb_rate && (
+            <>
+              {" "}
+              at ECB Reference Rate <span data-testid="approval-rate">{result.ecb_rate}</span> (Rate Date{" "}
+              <span data-testid="approval-rate-date">{result.rate_date}</span>)
+            </>
+          )}
         </p>
       )}
       {result.by_currency && result.by_currency.length > 0 && (

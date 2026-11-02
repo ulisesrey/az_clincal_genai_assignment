@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from spend_assistant.fx import REPORTING_CURRENCY, OriginalCurrency
+from spend_assistant.fx import REPORTING_CURRENCY, EcbRates, OriginalCurrency
 from spend_assistant.ledger import net_spend_eur
 from spend_assistant.summary import CurrencyBreakdown, currency_breakdown
 
@@ -79,6 +79,7 @@ class ToolResult(BaseModel):
     """Every tool result names the invoices it was computed from, so Evidence can cite them as Source Rows."""
 
     invoice_numbers: list[str] = Field(description="Every invoice the result was computed from.")
+    policy_sections: list[str] = Field(default_factory=list, description="Policy Section IDs the result rests on.")
 
 
 class SpendGroup(BaseModel):
@@ -155,12 +156,63 @@ def aggregate_spend(ledger: pd.DataFrame, args: AggregateSpendArgs) -> Aggregate
     )
 
 
+class ApprovalTierArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, description="Invoice amount in its Original Currency.")
+    currency: OriginalCurrency = Field(description="Original Currency of the amount.")
+    invoice_date: date | None = Field(
+        default=None,
+        description="Invoice date (YYYY-MM-DD) whose ECB Reference Rate converts a non-EUR amount; omit for the latest rate.",
+    )
+
+
+class ApprovalTierResult(ToolResult):
+    amount: Decimal
+    currency: OriginalCurrency
+    eur_equivalent: Decimal
+    ecb_rate: Decimal | None = Field(description="ECB Reference Rate used; none for EUR amounts.")
+    rate_date: date | None = Field(description="Rate Date of the ECB Reference Rate; none for EUR amounts.")
+    approval_tier: str
+
+
+# Policy §3 Approval Thresholds: inclusive upper bound of each tier in EUR-Equivalent, lowest first.
+_APPROVAL_TIERS = (
+    (Decimal("5000"), "Cost Center Owner"),
+    (Decimal("50000"), "Department Head"),
+    (Decimal("250000"), "Finance Director"),
+)
+_TOP_APPROVAL_TIER = "CFO + Procurement Excellence review"
+
+
+def required_approval_tier(rates: EcbRates, args: ApprovalTierArgs) -> ApprovalTierResult:
+    on = args.invoice_date or rates.latest_rate_date
+    conversion = rates.to_eur(args.amount, args.currency, on)
+    tier = next((tier for limit, tier in _APPROVAL_TIERS if conversion.eur_equivalent <= limit), _TOP_APPROVAL_TIER)
+    return ApprovalTierResult(
+        amount=args.amount,
+        currency=args.currency,
+        eur_equivalent=conversion.eur_equivalent,
+        ecb_rate=conversion.ecb_rate,
+        rate_date=conversion.rate_date,
+        approval_tier=tier,
+        invoice_numbers=[],
+        policy_sections=["3"],
+    )
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    ledger: pd.DataFrame
+    rates: EcbRates
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[[pd.DataFrame, Any], ToolResult]
+    run: Callable[[ToolContext, Any], ToolResult]
 
 
 AGGREGATE_SPEND = Tool(
@@ -171,7 +223,18 @@ AGGREGATE_SPEND = Tool(
         "The totals and invoice_numbers always cover every matching invoice; top_n only limits the groups listed."
     ),
     args_model=AggregateSpendArgs,
-    run=aggregate_spend,
+    run=lambda context, args: aggregate_spend(context.ledger, args),
 )
 
-TOOLS: dict[str, Tool] = {tool.name: tool for tool in (AGGREGATE_SPEND,)}
+REQUIRED_APPROVAL_TIER = Tool(
+    name="required_approval_tier",
+    description=(
+        "The Approval Tier (policy §3) required for an invoice amount: converts a non-EUR amount to its "
+        "EUR-Equivalent at the ECB Reference Rate, then applies the §3 thresholds exactly. Use it for every "
+        "question about who may approve an amount; it returns the converted amount, the rate and its Rate Date."
+    ),
+    args_model=ApprovalTierArgs,
+    run=lambda context, args: required_approval_tier(context.rates, args),
+)
+
+TOOLS: dict[str, Tool] = {tool.name: tool for tool in (AGGREGATE_SPEND, REQUIRED_APPROVAL_TIER)}

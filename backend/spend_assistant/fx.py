@@ -30,6 +30,10 @@ class EcbRates:
         self._dates = [date.fromisoformat(row["rate_date"]) for row in rows]
         self._rates = [{ccy: Decimal(row[ccy]) for ccy in self._currencies} for row in rows]
 
+    @property
+    def latest_rate_date(self) -> date:
+        return self._dates[-1]
+
     def to_eur(self, amount: Decimal, currency: str, on: date) -> Conversion:
         if currency == REPORTING_CURRENCY:
             return Conversion(amount.quantize(CENT, ROUND_HALF_UP), None, None)

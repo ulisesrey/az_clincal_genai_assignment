@@ -8,6 +8,7 @@ from spend_assistant.data_pack import DataPackMissingError, load_data_pack, reso
 from spend_assistant.fx import EcbRates
 from spend_assistant.ledger import build_ledger
 from spend_assistant.llm import BedrockProvider
+from spend_assistant.policy import parse_policy
 
 
 def main() -> None:
@@ -17,7 +18,8 @@ def main() -> None:
         print(f"Startup failed: {error}", file=sys.stderr)
         sys.exit(1)
 
-    app = create_app(build_ledger(pack, EcbRates()), BedrockProvider())
+    rates = EcbRates()
+    app = create_app(build_ledger(pack, rates), BedrockProvider(), parse_policy(pack.policy_text), rates)
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8000")))
 
 
