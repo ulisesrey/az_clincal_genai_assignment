@@ -32,6 +32,8 @@ For 200 Finance users on real data:
 - An append-only §8.2 audit record per question (question, tool calls, Evidence, answer, user), kept for 10 years under §8.1.
 - ERP (Enterprise Resource Planning) data feeds in place of CSV files.
 - Defences against prompt injection through free-text invoice fields (already treated as data, but untested at scale).
+- Guardrails on model input and output (for example Amazon Bedrock Guardrails): block prompt-injection attempts and out-of-scope requests, and redact sensitive data.
+- A gateway between the agent and the tools that checks each call against the user's permissions, so access rules live in one place and every tool call is logged.
 - Cost controls: per-user rate limits and token budgets, caching and model choice.
 - Observability: tracing of each agent loop, latency, error rates and the evaluation metrics above on live traffic.
 
