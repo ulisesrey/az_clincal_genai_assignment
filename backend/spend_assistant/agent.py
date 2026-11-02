@@ -32,11 +32,13 @@ class AnswerNotReached(Exception):
 
 
 class Agent:
-    def __init__(self, ledger: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates) -> None:
+    def __init__(
+        self, ledger: pd.DataFrame, vendors: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates
+    ) -> None:
         self.ledger = ledger
         self.provider = provider
         self.policy = policy
-        self.context = ToolContext(ledger, rates)
+        self.context = ToolContext(ledger, vendors, rates)
         self.system_prompt = system_prompt(policy)
         self.tool_specs = tool_specs()
 

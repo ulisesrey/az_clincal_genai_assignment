@@ -21,10 +21,12 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
 
 
-def create_app(ledger: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates) -> FastAPI:
+def create_app(
+    ledger: pd.DataFrame, vendors: pd.DataFrame, provider: ChatProvider, policy: Policy, rates: EcbRates
+) -> FastAPI:
     app = FastAPI(title="Finance Spend Intelligence")
     summary = summarize(ledger)
-    agent = Agent(ledger, provider, policy, rates)
+    agent = Agent(ledger, vendors, provider, policy, rates)
 
     # Registered before CORSMiddleware so it runs inside it and error responses still carry CORS headers.
     @app.middleware("http")
