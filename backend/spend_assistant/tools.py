@@ -90,6 +90,26 @@ class InvoiceFilter(BaseModel):
             mask &= ledger["is_credit_note"]
         return ledger.loc[mask]
 
+    @property
+    def policy_sections(self) -> list[str]:
+        """The Policy Sections that define the controls this filter selects on."""
+        sections: list[str] = []
+        if self.control_exception is not None:
+            sections += CONTROL_EXCEPTION_SECTIONS[self.control_exception]
+        if self.missing_approval:
+            sections += CONTROL_EXCEPTION_SECTIONS["missing_approval"]
+        if self.credit_notes_only:
+            sections += [CREDIT_NOTE_SECTION]
+        return list(dict.fromkeys(sections))
+
+
+# Maverick Spend is §2.2, and only potential because of the §9.1 emergency exception.
+CONTROL_EXCEPTION_SECTIONS: dict[ControlExceptionType, list[str]] = {
+    "maverick_spend": ["2.2", "9.1"],
+    "missing_approval": ["3.1"],
+    "non_active_vendor": ["4.1"],
+}
+CREDIT_NOTE_SECTION = "6.1"
 
 _CONTROL_EXCEPTION_COLUMNS: dict[ControlExceptionType, str] = {
     "maverick_spend": "is_maverick_spend",
@@ -179,6 +199,7 @@ def aggregate_spend(ledger: pd.DataFrame, args: AggregateSpendArgs) -> Aggregate
             groups = groups[: args.top_n]
 
     return AggregateSpendResult(
+        policy_sections=args.filter.policy_sections,
         vendor_ids=[group.key for group in groups] if args.group_by == "vendor" and groups else [],
         spend_eur=net_spend_eur(rows),
         invoice_count=len(rows),

@@ -143,3 +143,18 @@ def test_top_n_limits_the_groups_listed_but_totals_still_cover_every_matching_in
 def test_invalid_arguments_are_rejected(args):
     with pytest.raises(ValidationError):
         AggregateSpendArgs.model_validate(args)
+
+
+@pytest.mark.parametrize(
+    ("invoice_filter", "policy_sections"),
+    [
+        ({"control_exception": "maverick_spend"}, ["2.2", "9.1"]),
+        ({"control_exception": "missing_approval"}, ["3.1"]),
+        ({"missing_approval": True}, ["3.1"]),
+        ({"control_exception": "non_active_vendor"}, ["4.1"]),
+        ({"credit_notes_only": True}, ["6.1"]),
+        ({"country": "Spain"}, []),
+    ],
+)
+def test_a_control_filter_rests_on_the_policy_sections_that_define_it(ledger, invoice_filter, policy_sections):
+    assert run(ledger, filter=invoice_filter).policy_sections == policy_sections
