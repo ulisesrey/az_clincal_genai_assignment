@@ -29,4 +29,4 @@ def parse_policy(text: str) -> Policy:
             current = sections.setdefault(clause[1], [clause[2]])
         elif current is not None:
             current.append(line)
-    return Policy(text=text, sections={id: "\n".join(lines).strip() for id, lines in sections.items()})
+    return Policy(text=text, sections={section: "\n".join(lines).strip() for section, lines in sections.items()})

@@ -80,6 +80,7 @@ class ToolResult(BaseModel):
 
     invoice_numbers: list[str] = Field(description="Every invoice the result was computed from.")
     policy_sections: list[str] = Field(default_factory=list, description="Policy Section IDs the result rests on.")
+    vendor_ids: list[str] = Field(default_factory=list, description="Vendor IDs the result names.")
 
 
 class SpendGroup(BaseModel):
@@ -147,6 +148,7 @@ def aggregate_spend(ledger: pd.DataFrame, args: AggregateSpendArgs) -> Aggregate
             groups = groups[: args.top_n]
 
     return AggregateSpendResult(
+        vendor_ids=[group.key for group in groups] if args.group_by == "vendor" and groups else [],
         spend_eur=net_spend_eur(rows),
         invoice_count=len(rows),
         by_currency=currency_breakdown(rows),

@@ -6,7 +6,7 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
-from spend_assistant.evidence import Citations, Computation, Evidence, ToolCall, assemble_evidence
+from spend_assistant.evidence import Computation, Evidence, ToolCall, assemble_evidence
 from spend_assistant.fx import EcbRates
 from spend_assistant.llm import ChatProvider
 from spend_assistant.policy import Policy
@@ -14,6 +14,8 @@ from spend_assistant.prompt import SUBMIT_ANSWER, FinalAnswer, system_prompt, to
 from spend_assistant.tools import TOOLS, ToolContext
 
 MAX_TOOL_ITERATIONS = 5
+
+_REPROMPT = f"Finish by calling {SUBMIT_ANSWER} with your answer and its citations; a plain-text reply is not accepted."
 
 AnswerStatus = Literal["answered", "declined"]
 
@@ -48,19 +50,22 @@ class Agent:
             content = message.get("content", [])
             tool_uses = [block["toolUse"] for block in content if "toolUse" in block]
             if not tool_uses:
-                answer = "".join(block.get("text", "") for block in content).strip()
-                return self._respond(answer, Citations(), tool_calls)
+                messages.append({"role": "user", "content": [{"text": _REPROMPT}]})
+                continue
 
             results = []
+            final: FinalAnswer | None = None
             for tool_use in tool_uses:
                 if tool_use["name"] != SUBMIT_ANSWER:
                     results.append(self._run_tool(tool_use, tool_calls))
                     continue
                 try:
-                    final = FinalAnswer.model_validate(tool_use["input"])
+                    submitted = FinalAnswer.model_validate(tool_use["input"])
                 except ValidationError as error:
                     results.append(_tool_result(tool_use, {"error": str(error)}, error=True))
                     continue
+                final = final or submitted
+            if final is not None:
                 return self._respond(final.answer, final, tool_calls)
             messages.append({"role": "user", "content": results})
 
@@ -88,7 +93,10 @@ class Agent:
         )
         tool_calls.append(
             ToolCall(
-                computation=computation, invoice_numbers=result.invoice_numbers, policy_sections=result.policy_sections
+                computation=computation,
+                invoice_numbers=result.invoice_numbers,
+                policy_sections=result.policy_sections,
+                vendor_ids=result.vendor_ids,
             )
         )
         return _tool_result(tool_use, computation.result)

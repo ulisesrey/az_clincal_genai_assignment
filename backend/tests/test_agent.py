@@ -9,7 +9,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from spend_assistant.agent import MAX_TOOL_ITERATIONS, Agent, AnswerNotReached
-from spend_assistant.evidence import PolicyReference
+from spend_assistant.evidence import Citations, Computation, PolicyReference, ToolCall, assemble_evidence
 from spend_assistant.fx import EcbRates
 from spend_assistant.llm import BedrockProvider, ProviderError
 from spend_assistant.policy import parse_policy
@@ -57,7 +57,7 @@ def tool_results(request: dict[str, Any]) -> list[dict[str, Any]]:
 def test_the_answer_comes_with_its_computation_and_the_invoices_it_used_as_source_rows(ledger):
     client = FakeConverseClient(
         [tool_use("t1", {"filter": {"country": "Spain"}})],
-        [text("Spend with Spanish vendors is EUR 2,300.00.")],
+        [submit_answer("Spend with Spanish vendors is EUR 2,300.00.")],
     )
 
     response = ask(ledger, client)
@@ -90,7 +90,7 @@ def test_the_answer_comes_with_its_computation_and_the_invoices_it_used_as_sourc
 def test_the_model_sees_the_tool_results_before_its_answer_is_accepted(ledger):
     client = FakeConverseClient(
         [text("Spanish vendors total EUR 9,999.99."), tool_use("t1", {"filter": {"country": "Spain"}})],
-        [text("Spanish vendors total EUR 2,300.00.")],
+        [submit_answer("Spanish vendors total EUR 2,300.00.")],
     )
 
     response = ask(ledger, client)
@@ -105,7 +105,7 @@ def test_the_model_sees_the_tool_results_before_its_answer_is_accepted(ledger):
 def test_evidence_covers_every_computation_run_whatever_the_answer_mentions(ledger):
     client = FakeConverseClient(
         [tool_use("t1", {"filter": {"vendor_id": "V-1"}}), tool_use("t2", {"filter": {"vendor_id": "V-3"}})],
-        [text("V-1 spent EUR 800.00 (see INV-3) and V-3 EUR 500.00.")],
+        [submit_answer("V-1 spent EUR 800.00 (see INV-3) and V-3 EUR 500.00.")],
     )
 
     response = ask(ledger, client, "Spend with V-1 and V-3")
@@ -120,7 +120,7 @@ def test_evidence_covers_every_computation_run_whatever_the_answer_mentions(ledg
 def test_top_n_source_rows_are_every_invoice_behind_the_totals(ledger):
     client = FakeConverseClient(
         [tool_use("t1", {"group_by": "vendor", "top_n": 1})],
-        [text("V-2 leads.")],
+        [submit_answer("V-2 leads.")],
     )
 
     response = ask(ledger, client, "Top vendor by Spend")
@@ -134,7 +134,7 @@ def test_invalid_tool_arguments_are_returned_to_the_model_and_are_not_computatio
     client = FakeConverseClient(
         [tool_use("t1", {"filter": {"country": "Spain", "supplier": "x"}})],
         [tool_use("t2", {"filter": {"country": "Spain"}})],
-        [text("EUR 2,300.00.")],
+        [submit_answer("EUR 2,300.00.")],
     )
 
     response = ask(ledger, client)
@@ -148,7 +148,7 @@ def test_invalid_tool_arguments_are_returned_to_the_model_and_are_not_computatio
 def test_an_unknown_tool_is_reported_back_to_the_model(ledger):
     client = FakeConverseClient(
         [tool_use("t1", {}, name="delete_invoices")],
-        [text("I can only aggregate Spend.")],
+        [submit_answer("I can only aggregate Spend.")],
     )
 
     response = ask(ledger, client)
@@ -166,9 +166,48 @@ def test_no_answer_within_the_iteration_limit_is_an_error(ledger):
         ask(ledger, client)
 
 
+def test_a_plain_text_reply_is_reprompted_to_call_submit_answer_instead_of_accepted(ledger):
+    client = FakeConverseClient(
+        [text("Spend is EUR 2,300.00.")],
+        [submit_answer("Spend is EUR 2,300.00.")],
+    )
+
+    response = ask(ledger, client)
+
+    assert response.answer == "Spend is EUR 2,300.00."
+    reprompt = client.requests[1]["messages"][-1]
+    assert reprompt["role"] == "user"
+    assert "submit_answer" in reprompt["content"][0]["text"]
+
+
+def test_a_model_that_never_calls_submit_answer_is_an_error_not_an_unverified_answer(ledger):
+    client = FakeConverseClient(*[[text("Spend is EUR 2,300.00.")] for _ in range(MAX_TOOL_ITERATIONS)])
+
+    with pytest.raises(AnswerNotReached):
+        ask(ledger, client)
+
+    assert len(client.requests) == MAX_TOOL_ITERATIONS
+
+
+def test_tools_requested_alongside_submit_answer_still_run_and_are_in_the_evidence(ledger):
+    client = FakeConverseClient(
+        [
+            submit_answer("Spanish vendors total EUR 2,300.00.", invoice_numbers=["INV-3"]),
+            tool_use("t1", {"filter": {"country": "Spain"}}),
+        ]
+    )
+
+    response = ask(ledger, client)
+
+    assert response.answer == "Spanish vendors total EUR 2,300.00."
+    assert [c.args for c in response.evidence.computations] == [{"filter": {"country": "Spain"}}]
+    assert [row.invoice_number for row in response.evidence.source_rows] == ["INV-3", "INV-4", "INV-6"]
+    assert response.warnings == []
+
+
 def test_converse_is_called_with_the_configured_model_and_the_tools(ledger, monkeypatch):
     monkeypatch.setenv("BEDROCK_MODEL_ID", "test-model")
-    client = FakeConverseClient([text("Hello.")])
+    client = FakeConverseClient([submit_answer("Hello.")])
 
     ask(ledger, client, "Hi")
 
@@ -194,7 +233,7 @@ def test_a_bedrock_failure_is_a_provider_error(ledger):
 
 
 def test_the_whole_policy_is_in_the_system_prompt(ledger):
-    client = FakeConverseClient([text("Hello.")])
+    client = FakeConverseClient([submit_answer("Hello.")])
 
     ask(ledger, client, "Hi")
 
@@ -285,6 +324,20 @@ def test_a_cited_vendor_that_no_tool_returned_is_dropped_with_a_warning(ledger):
     [warning] = response.warnings
     assert "V-3" in warning
     assert "V-1 " not in warning + " "
+
+
+def test_a_cited_vendor_a_tool_returned_is_kept_even_when_no_invoice_of_it_was_returned(ledger):
+    call = ToolCall(
+        computation=Computation(tool="vendor_lookup", args={}, result={"vendors": ["V-3"]}),
+        invoice_numbers=[],
+        vendor_ids=["V-3"],
+    )
+
+    _, warnings = assemble_evidence(ledger, POLICY, [call], Citations(vendor_ids=["V-3", "V-9"]))
+
+    [warning] = warnings
+    assert "V-9" in warning
+    assert "V-3 " not in warning + " "
 
 
 def test_every_dropped_citation_gets_its_own_warning(ledger):

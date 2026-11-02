@@ -34,6 +34,7 @@ class ToolCall:
     computation: Computation
     invoice_numbers: list[str]
     policy_sections: list[str] = field(default_factory=list)
+    vendor_ids: list[str] = field(default_factory=list)
 
 
 class Citations(BaseModel):
@@ -62,7 +63,9 @@ def assemble_evidence(
     """
     returned_invoices = {number for call in tool_calls for number in call.invoice_numbers}
     invoices = invoices_by_number(ledger, returned_invoices)
-    returned_vendors = {invoice["vendor_id"] for invoice in invoices}
+    returned_vendors = {invoice["vendor_id"] for invoice in invoices} | {
+        vendor_id for call in tool_calls for vendor_id in call.vendor_ids
+    }
 
     warnings = [
         f"Removed cited invoice {number}: no tool returned it."

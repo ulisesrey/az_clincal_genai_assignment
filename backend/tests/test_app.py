@@ -33,7 +33,7 @@ def post_ask(ledger, policy, rates, provider: ScriptedProvider):
 def test_ask_returns_the_answer_with_evidence(ledger, policy, rates):
     provider = ScriptedProvider(
         [{"toolUse": {"toolUseId": "t1", "name": "aggregate_spend", "input": {"filter": {"country": "Spain"}}}}],
-        [{"text": "EUR 2,300.00."}],
+        [{"toolUse": {"toolUseId": "f", "name": "submit_answer", "input": {"answer": "EUR 2,300.00."}}}],
     )
 
     response = post_ask(ledger, policy, rates, provider)
