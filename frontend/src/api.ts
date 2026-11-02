@@ -4,6 +4,8 @@ export type Money = string;
 
 export type OriginalCurrency = "EUR" | "GBP" | "USD";
 
+export type VendorStatus = "ACTIVE" | "INACTIVE" | "ON_HOLD";
+
 export interface CurrencyBreakdown {
   currency: OriginalCurrency;
   native_total: Money;
@@ -15,7 +17,7 @@ export interface Summary {
   invoice_count: number;
   total_spend_eur: Money;
   by_currency: CurrencyBreakdown[];
-  by_vendor_status: { vendor_status: string; spend_eur: Money; invoice_count: number }[];
+  by_vendor_status: { vendor_status: VendorStatus; spend_eur: Money; invoice_count: number }[];
   control_exceptions: { maverick_spend: number; missing_approval: number; non_active_vendor: number };
   credit_note_count: number;
 }
@@ -67,10 +69,31 @@ export interface PolicyReference {
   text: string;
 }
 
-export interface SourceRow {
+export interface InvoiceSourceRow {
+  kind: "invoice";
   invoice_number: string;
-  fields: Record<string, string | null>;
+  fields: {
+    invoice_date: string;
+    vendor_id: string;
+    vendor_name: string;
+    country: string;
+    vendor_status: VendorStatus;
+    cost_center: string;
+    amount: Money;
+    currency: OriginalCurrency;
+    eur_equivalent: Money;
+    ecb_rate: string | null;
+    rate_date: string | null;
+  };
 }
+
+export interface VendorSourceRow {
+  kind: "vendor";
+  vendor_id: string;
+  fields: { vendor_name: string; country: string; category: string; vendor_status: VendorStatus };
+}
+
+export type SourceRow = InvoiceSourceRow | VendorSourceRow;
 
 export interface AskResponse {
   answer: string;

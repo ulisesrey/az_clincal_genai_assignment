@@ -11,7 +11,7 @@ import pytest
 
 from spend_assistant.data_pack import DataPack
 from spend_assistant.fx import SNAPSHOT_PATH, EcbRates
-from spend_assistant.ledger import build_ledger
+from spend_assistant.ledger import SpendData, build_ledger, build_vendor_master
 from spend_assistant.policy import Policy, parse_policy
 
 # Same layout as the supplied policy (numbered headings, numbered clauses, a table under section 3), invented wording.
@@ -36,6 +36,12 @@ This policy is synthetic.
 
 ## 4. Vendors
 4.1 Only ACTIVE vendors may be paid.
+
+## 6. Credit Notes
+6.1 Negative amounts are credit notes.
+
+## 9. Exceptions
+9.1 Emergencies may skip the PO.
 """
 
 VENDORS = [
@@ -55,9 +61,14 @@ INVOICES = [
 ]
 ALL_INVOICES = [invoice[0] for invoice in INVOICES]
 
+# Control Exceptions: INV-3 has no PO at EUR 1,000.00, so it is Maverick Spend; INV-2 (a Credit Note) and INV-5
+# (EUR 500.00) have no PO but are not. INV-6 has Missing Approval. V-2 and V-3 are Non-Active Vendors.
+WITHOUT_PO = {"INV-2", "INV-3", "INV-5"}
+WITHOUT_APPROVER = {"INV-6"}
+
 
 @pytest.fixture(scope="session")
-def ledger() -> pd.DataFrame:
+def data_pack() -> DataPack:
     names = {vendor_id: name for vendor_id, name, *_ in VENDORS}
     invoices = pd.DataFrame(
         [
@@ -70,19 +81,34 @@ def ledger() -> pd.DataFrame:
                 "amount": amount,
                 "currency": currency,
                 "cost_center": cost_center,
-                "po_number": "PO-1",
-                "approved_by": "a.approver",
+                "po_number": None if number in WITHOUT_PO else "PO-1",
+                "approved_by": None if number in WITHOUT_APPROVER else "a.approver",
             }
             for number, day, vendor_id, amount, currency, cost_center in INVOICES
         ]
     ).astype({"po_number": "string", "approved_by": "string"})
     vendors = pd.DataFrame(VENDORS, columns=["vendor_id", "vendor_name", "country", "category", "status"])
-    return build_ledger(DataPack(invoices=invoices, vendors=vendors, policy_text=""), EcbRates())
+    return DataPack(invoices=invoices, vendors=vendors, policy_text="")
+
+
+@pytest.fixture(scope="session")
+def ledger(data_pack: DataPack) -> pd.DataFrame:
+    return build_ledger(data_pack, EcbRates())
+
+
+@pytest.fixture(scope="session")
+def vendors(data_pack: DataPack) -> pd.DataFrame:
+    return build_vendor_master(data_pack)
 
 
 @pytest.fixture(scope="session")
 def rates() -> EcbRates:
     return EcbRates()
+
+
+@pytest.fixture(scope="session")
+def spend_data(ledger: pd.DataFrame, vendors: pd.DataFrame, rates: EcbRates) -> SpendData:
+    return SpendData(ledger=ledger, vendors=vendors, rates=rates)
 
 
 @pytest.fixture(scope="session")

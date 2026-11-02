@@ -72,7 +72,7 @@ test("total Spend with vendors based in Spain shows the net EUR total, with only
   const computation = await openEvidence(message, "Computation");
   await expect(computation.getByTestId("computation-spend").filter({ hasText: SPAIN_TOTAL }).first()).toBeVisible();
 
-  const sourceRows = (await openEvidence(message, "Source Rows")).getByRole("table", { name: "Source Rows" });
+  const sourceRows = (await openEvidence(message, "Source Rows")).getByRole("table", { name: "Invoice Source Rows" });
   const invoiceNumbers = await sourceRows.locator("tbody tr").getByRole("rowheader").allTextContents();
   expect(invoiceNumbers.map((n) => n.trim()).sort()).toEqual([...SPAIN_INVOICES].sort());
   expect(new Set(await sourceRows.getByTestId("source-row-country").allTextContents())).toEqual(new Set(["Spain"]));

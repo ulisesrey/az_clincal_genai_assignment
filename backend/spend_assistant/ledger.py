@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -37,17 +38,48 @@ def build_ledger(pack: DataPack, rates: EcbRates) -> pd.DataFrame:
     )
     invoices["is_missing_approval"] = invoices["approved_by"].isna()
 
-    vendors = pack.vendors.rename(columns={"status": "vendor_status"})[
-        ["vendor_id", "country", "category", "vendor_status"]
-    ]
-    ledger = invoices.merge(vendors, on="vendor_id", how="left", validate="many_to_one")
-    ledger["is_non_active_vendor"] = ledger["vendor_status"].isin(NON_ACTIVE_VENDOR_STATUSES)
-    return ledger
+    vendors = build_vendor_master(pack)[["vendor_id", "country", "category", "vendor_status", "is_non_active_vendor"]]
+    return invoices.merge(vendors, on="vendor_id", how="left", validate="many_to_one")
+
+
+def build_vendor_master(pack: DataPack) -> pd.DataFrame:
+    """The Vendor Master with its current Vendor Status and Non-Active Vendor marker."""
+    vendors = pack.vendors.rename(columns={"status": "vendor_status"})
+    vendors["is_non_active_vendor"] = vendors["vendor_status"].isin(NON_ACTIVE_VENDOR_STATUSES)
+    return vendors
+
+
+@dataclass(frozen=True)
+class SpendData:
+    """Everything questions are answered from: the ledger, the Vendor Master and the ECB Reference Rates."""
+
+    ledger: pd.DataFrame
+    vendors: pd.DataFrame
+    rates: EcbRates
+
+
+def load_spend_data(pack: DataPack, rates: EcbRates) -> SpendData:
+    return SpendData(ledger=build_ledger(pack, rates), vendors=build_vendor_master(pack), rates=rates)
 
 
 def invoices_by_number(ledger: pd.DataFrame, invoice_numbers: set[str]) -> list[dict[str, Any]]:
     """The ledger rows for these invoice numbers, in ledger order."""
     return ledger.loc[ledger["invoice_number"].isin(list(invoice_numbers))].to_dict("records")
+
+
+def vendors_by_id(vendors: pd.DataFrame, vendor_ids: set[str]) -> list[dict[str, Any]]:
+    """The Vendor Master rows for these vendor IDs, in Vendor Master order."""
+    return vendors.loc[vendors["vendor_id"].isin(list(vendor_ids))].to_dict("records")
+
+
+def vendor_fields(vendor: dict[str, Any]) -> dict[str, str | None]:
+    """A vendor's Vendor Master fields, for display as a Source Row."""
+    return {
+        "vendor_name": vendor["vendor_name"],
+        "country": vendor["country"],
+        "category": vendor["category"],
+        "vendor_status": vendor["vendor_status"],
+    }
 
 
 def invoice_fields(invoice: dict[str, Any]) -> dict[str, str | None]:

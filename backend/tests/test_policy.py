@@ -11,7 +11,7 @@ from tests.conftest import POLICY_TEXT
 def test_every_numbered_section_is_keyed_by_its_id():
     policy = parse_policy(POLICY_TEXT)
 
-    assert list(policy.sections) == ["1", "2", "2.1", "2.2", "3", "3.1", "4", "4.1"]
+    assert list(policy.sections) == ["1", "2", "2.1", "2.2", "3", "3.1", "4", "4.1", "6", "6.1", "9", "9.1"]
 
 
 def test_a_clause_keeps_its_text_verbatim_without_its_number():
